@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fps60</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #16181d; --muted: #616875;
+    --line: #e1e4e9; --accent: #2557d6; --ok: #1f7a43; --okbg: #e3f4ea;
+    --warn: #8a5a00; --warnbg: #fbf0d9; --bad: #a12a2a; --badbg: #f9e2e2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111317; --card: #1a1d23; --text: #e8eaee; --muted: #9aa1ad;
+      --line: #2b2f37; --accent: #7aa2ff; --ok: #6fd39a; --okbg: #17321f;
+      --warn: #f0c060; --warnbg: #3a2e12; --bad: #f08a8a; --badbg: #3a1717;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  header { display: flex; align-items: baseline; justify-content: space-between;
+           gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 22px; margin: 0; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .bar { display: flex; gap: 8px; margin: 14px 0; flex-wrap: wrap; }
+  input[type=search] { flex: 1 1 200px; min-width: 0; padding: 9px 11px;
+         border: 1px solid var(--line); border-radius: 8px;
+         background: var(--card); color: var(--text); font: inherit; }
+  button, select { padding: 9px 12px; border: 1px solid var(--line);
+         border-radius: 8px; background: var(--card); color: var(--text);
+         font: inherit; cursor: pointer; }
+  .card { background: var(--card); border: 1px solid var(--line);
+          border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+  .game-head { display: flex; justify-content: space-between; gap: 8px;
+               align-items: baseline; }
+  .game-name { font-weight: 600; overflow-wrap: anywhere; }
+  .meta { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .patch { display: flex; align-items: center; justify-content: space-between;
+           gap: 12px; padding-top: 10px; margin-top: 10px;
+           border-top: 1px solid var(--line); }
+  .patch-info { min-width: 0; }
+  .patch-name { font-weight: 500; }
+  .note { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .chip { display: inline-block; font-size: 12px; padding: 1px 8px;
+          border-radius: 999px; margin-left: 6px; vertical-align: 1px; }
+  .chip.ok { color: var(--ok); background: var(--okbg); }
+  .chip.warn { color: var(--warn); background: var(--warnbg); }
+  .chip.bad { color: var(--bad); background: var(--badbg); }
+  .switch { position: relative; flex: none; width: 50px; height: 30px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; border-radius: 999px;
+            background: var(--line); transition: background .15s; }
+  .slider::before { content: ""; position: absolute; width: 24px; height: 24px;
+            left: 3px; top: 3px; border-radius: 50%; background: #fff;
+            transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  .switch input:checked + .slider { background: var(--accent); }
+  .switch input:checked + .slider::before { transform: translateX(20px); }
+  .switch input:disabled + .slider { opacity: .4; }
+  .switch input:focus-visible + .slider { outline: 2px solid var(--accent);
+            outline-offset: 2px; }
+  h2 { font-size: 16px; margin: 22px 0 8px; }
+  .log-row { font-size: 13px; padding: 6px 0; border-top: 1px solid var(--line); }
+  .log-row:first-child { border-top: 0; }
+  .empty { color: var(--muted); text-align: center; padding: 24px 8px; }
+  .hint { color: var(--muted); font-size: 13px; margin-top: 18px; }
+  #error { display: none; color: var(--bad); background: var(--badbg);
+           padding: 10px 12px; border-radius: 8px; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>fps60</h1>
+    <span class="sub" id="summary">Loading…</span>
+  </header>
+
+  <div class="bar">
+    <input type="search" id="search" placeholder="Search games or title IDs"
+           aria-label="Search games">
+    <select id="filter" aria-label="Filter">
+      <option value="patched">Games with a 60 FPS patch</option>
+      <option value="all">All installed games</option>
+    </select>
+    <button id="rescan" type="button">Rescan</button>
+  </div>
+
+  <div id="error"></div>
+  <div id="games"></div>
+
+  <h2>Activity</h2>
+  <div class="card" id="log"></div>
+
+  <p class="hint">
+    Patches apply when the game starts. Turning one on while the game runs
+    applies it right away, but some games only read their frame-rate setting
+    at boot, so restart the game if nothing changes. Turning a patch off takes
+    effect the next time the game starts. Use patches in offline play only.
+  </p>
+</main>
+
+<script>
+"use strict";
+let state = null;
+let busy = false;
+
+const $ = (id) => document.getElementById(id);
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function chip(cls, text) {
+  return el("span", "chip " + cls, text);
+}
+
+function showError(msg) {
+  const box = $("error");
+  box.textContent = msg || "";
+  box.style.display = msg ? "block" : "none";
+}
+
+async function call(method, url) {
+  const res = await fetch(url, { method });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || ("HTTP " + res.status));
+  return body;
+}
+
+async function refresh() {
+  if (busy) return;
+  try {
+    state = await call("GET", "/api/state");
+    showError("");
+    render();
+  } catch (e) {
+    showError("Can't reach fps60 on the console: " + e.message);
+  }
+}
+
+async function toggle(game, patch, on, input) {
+  busy = true;
+  input.disabled = true;
+  try {
+    const q = new URLSearchParams({ tid: game.tid, name: patch.name, on: on ? "1" : "0" });
+    state = await call("POST", "/api/toggle?" + q);
+    showError("");
+  } catch (e) {
+    showError("Couldn't change " + patch.name + ": " + e.message);
+  }
+  busy = false;
+  render();
+}
+
+function patchRow(game, patch) {
+  const row = el("div", "patch");
+  const info = el("div", "patch-info");
+  const name = el("div", "patch-name", patch.name);
+  const supported = [...new Set(patch.versions.filter((v) => v.supported).map((v) => v.appver))];
+  const running = state.running.some((r) => r.tid === game.tid);
+
+  if (patch.available) {
+    name.append(chip("ok", "Matches your version"));
+  } else if (supported.length) {
+    name.append(chip("warn", "Needs version " + supported.join(", ")));
+  } else {
+    name.append(chip("bad", "Not supported by fps60"));
+  }
+  if (patch.enabled && running) name.append(chip("ok", "Game running"));
+  info.append(name);
+
+  const by = patch.author ? "by " + patch.author : "";
+  const note = [by, patch.note].filter(Boolean).join(" · ");
+  if (note) info.append(el("div", "note", note));
+
+  const label = el("label", "switch");
+  const input = el("input");
+  input.type = "checkbox";
+  input.checked = patch.enabled;
+  input.disabled = !patch.available && !patch.enabled;
+  input.setAttribute("aria-label", patch.name + " for " + (game.name || game.tid));
+  input.addEventListener("change", () => toggle(game, patch, input.checked, input));
+  label.append(input, el("span", "slider"));
+
+  row.append(info, label);
+  return row;
+}
+
+function render() {
+  if (!state) return;
+  const q = $("search").value.trim().toLowerCase();
+  const onlyPatched = $("filter").value === "patched";
+  const games = state.games
+    .filter((g) => !onlyPatched || g.patches.length)
+    .filter((g) => !q || (g.name + " " + g.tid).toLowerCase().includes(q))
+    .sort((a, b) =>
+      (b.patches.some((p) => p.available) - a.patches.some((p) => p.available)) ||
+      (a.name || a.tid).localeCompare(b.name || b.tid));
+
+  const withPatch = state.games.filter((g) => g.patches.some((p) => p.available)).length;
+  $("summary").textContent = state.games.length + " games installed · " +
+    withPatch + " with a 60 FPS patch for your version";
+
+  const list = $("games");
+  list.replaceChildren();
+  if (!games.length) {
+    list.append(el("div", "card empty", state.games.length
+      ? "No matching games."
+      : "No installed games found. Try Rescan."));
+  }
+  for (const g of games) {
+    const card = el("div", "card");
+    const head = el("div", "game-head");
+    head.append(el("div", "game-name", g.name || g.tid),
+      el("div", "meta", [g.tid, g.ps5 ? "PS5" : "PS4", g.version && "v" + g.version]
+        .filter(Boolean).join(" · ")));
+    card.append(head);
+    if (!g.patches.length) card.append(el("div", "note", "No known frame-rate patch."));
+    for (const p of g.patches) card.append(patchRow(g, p));
+    list.append(card);
+  }
+
+  const log = $("log");
+  log.replaceChildren();
+  if (!state.log.length) log.append(el("div", "empty", "Nothing applied yet."));
+  for (const e of state.log) {
+    const row = el("div", "log-row");
+    row.append(chip(e.ok ? "ok" : "bad", e.ok ? "Applied" : "Failed"));
+    row.append(" " + (e.title || e.tid) + " · " + e.name + " (v" + e.version + "): " + e.msg);
+    log.append(row);
+  }
+}
+
+$("search").addEventListener("input", render);
+$("filter").addEventListener("change", render);
+$("rescan").addEventListener("click", async () => {
+  try {
+    state = await call("POST", "/api/rescan");
+    showError("");
+    render();
+  } catch (e) {
+    showError("Rescan failed: " + e.message);
+  }
+});
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>
