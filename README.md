@@ -95,8 +95,29 @@ publishes it next to the ELF) to `/data/fps60/patches.db` on the console.
 
 ## CI
 
-- GitHub Actions (`.github/workflows/build.yml`): runs the host tests, builds
-  both payloads, and uploads them with `patches.db` as an artifact.
-- GitLab (`.gitlab-ci.yml`): the same build, plus a manual `deploy` job for a
-  self-hosted runner tagged `homelab` on the PS5's LAN. Set `PS5_HOST` (and
-  `PAYLOAD=fps60.elf` to send fps60) as CI/CD variables.
+GitHub Actions (`.github/workflows/build.yml`) runs on every push and pull
+request:
+
+1. **build**: builds `hello.elf` and `fps60.elf`, runs the host tests, and
+   uploads the ELFs and `patches.db` as the `payload` artifact.
+2. **deploy**: sends a payload to the console. It is skipped unless the
+   repository variable `PS5_HOST` is set, and never runs for pull requests.
+
+Deploy settings are repository variables (Settings > Secrets and variables >
+Actions > Variables):
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PS5_HOST` | (unset: deploy skipped) | Console IP, e.g. `192.168.1.50` |
+| `PS5_PORT` | `9021` | ELF loader port |
+| `PS5_PAYLOAD` | `hello.elf` | Payload sent on push. A manual run (Run workflow) lets you pick one. |
+| `PS5_RUNNER` | `ubuntu-24.04` | Runner label for the deploy job |
+
+GitHub's cloud runners can't reach a console on your home network. With the
+default runner, the deploy job reports the console as unreachable and skips
+the send instead of failing. To deploy for real, register a self-hosted runner
+on the console's network and set `PS5_RUNNER` to its label. The repository is
+public, so before doing that, set Settings > Actions > General > "Require
+approval for all external contributors": a self-hosted runner executes
+whatever a workflow tells it to, inside your network. The deploy job already
+refuses to run for pull requests.
