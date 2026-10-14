@@ -1,0 +1,36 @@
+stages:
+  - build
+  - deploy
+
+variables:
+  PS5_PAYLOAD_SDK: /opt/ps5-payload-sdk
+  LLVM_CONFIG: /usr/bin/llvm-config-18
+
+.sdk: &sdk
+  image: ubuntu:24.04
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq bash make clang-18 lld-18 llvm-18 wget unzip socat
+    - wget -q https://github.com/ps5-payload-dev/sdk/releases/latest/download/ps5-payload-sdk.zip
+    - unzip -q -d /opt ps5-payload-sdk.zip
+
+build:
+  <<: *sdk
+  stage: build
+  script:
+    - make
+  artifacts:
+    paths:
+      - "*.elf"
+    expire_in: 30 days
+
+# Manual, and only on a runner inside your LAN that can reach the PS5.
+# Set PS5_HOST as a CI/CD variable (e.g. 192.168.1.50).
+deploy:
+  <<: *sdk
+  stage: deploy
+  needs: [build]
+  when: manual
+  tags: [homelab]
+  script:
+    - make test
