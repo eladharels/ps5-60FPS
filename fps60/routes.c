@@ -1,6 +1,8 @@
+#include <stdlib.h>
 #include <string.h>
 
 #include "app.h"
+#include "log.h"
 #include "routes.h"
 
 
@@ -23,6 +25,25 @@ fps60_handle(const http_req_t *req, http_resp_t *resp) {
       goto not_allowed;
     }
     app_state_json(&resp->body);
+    return;
+  }
+
+  if(!strcmp(req->path, "/api/logs")) {
+    char since[24] = "0";
+    if(!is_get) {
+      goto not_allowed;
+    }
+    http_query_get(req->query, "since", since, sizeof(since));
+    log_json(&resp->body, strtoul(since, NULL, 10));
+    return;
+  }
+
+  if(!strcmp(req->path, "/fps60.log")) {
+    if(!is_get) {
+      goto not_allowed;
+    }
+    resp->type = "text/plain; charset=utf-8";
+    log_text(&resp->body);
     return;
   }
 

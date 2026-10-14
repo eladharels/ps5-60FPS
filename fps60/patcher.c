@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "log.h"
 #include "patcher.h"
 #include "platform.h"
 
@@ -120,6 +121,9 @@ patcher_apply(pid_t pid, const patch_t *p, char *err, size_t errlen) {
         snprintf(err, errlen, "pattern %d not found", i + 1);
         goto out;
       }
+      LOGD("line %d: pattern found at 0x%lx (+0x%lx), offset %ld", i + 1,
+           (unsigned long)addrs[i], (unsigned long)(addrs[i] - base),
+           l->offset);
       addrs[i] += l->offset;
     } else {
       addrs[i] = base + (intptr_t)(l->addr - p->imagebase);
@@ -128,11 +132,27 @@ patcher_apply(pid_t pid, const patch_t *p, char *err, size_t errlen) {
 
   for(int i=0; i<p->nlines; i++) {
     const patch_line_t *l = &p->lines[i];
+    uint8_t before[8] = {0};
+    char hex[2 * sizeof(before) + 4] = "";
+    size_t n = l->data_len < sizeof(before) ? l->data_len : sizeof(before);
+
+    // The old bytes help tell a wrong game version from a bad patch.
+    plat_read(pid, addrs[i], before, n);
+    for(size_t j=0; j<n; j++) {
+      snprintf(hex + 2 * j, 3, "%02x", before[j]);
+    }
+    if(l->data_len > n) {
+      strcat(hex, "..");
+    }
     if(plat_write(pid, addrs[i], l->data, l->data_len)) {
-      snprintf(err, errlen, "write %d of %d failed at 0x%lx", i + 1,
-               p->nlines, (unsigned long)addrs[i]);
+      snprintf(err, errlen, "write %d of %d failed at 0x%lx%s", i + 1,
+               p->nlines, (unsigned long)addrs[i],
+               i ? " (earlier lines were written)" : "");
       goto out;
     }
+    LOGD("line %d: wrote %zu bytes at 0x%lx (+0x%lx), was %s", i + 1,
+         l->data_len, (unsigned long)addrs[i],
+         (unsigned long)(addrs[i] - base), n ? hex : "-");
   }
   rc = 0;
 

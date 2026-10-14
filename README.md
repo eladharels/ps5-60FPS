@@ -54,6 +54,13 @@ the same network.
   only read their frame-rate setting at boot, so restart the game if nothing
   changes. Switching a patch off takes effect the next time the game starts.
 - The Activity list shows what was applied, and why a patch was not.
+- The **Logs** tab shows everything fps60 does: which metadata folders and
+  files it read, when a game starts and exits, where each patch line was
+  written and what the bytes were before, and every error. Filter by level or
+  text, copy the lines, or download them. The console keeps the last 1000
+  lines in memory and writes the log to `/data/fps60/fps60.log` (the previous
+  run is kept as `fps60.log.1`); the same lines stream back to the terminal
+  that ran `make test`.
 
 ### How it works
 
@@ -90,8 +97,8 @@ publishes it next to the ELF) to `/data/fps60/patches.db` on the console.
   an account flagged.
 - Not tested on a console yet. The parts most likely to need adjustment are
   the metadata paths in `fps60/titles.c` and how a running game is detected
-  (`fps60/platform_ps5.c`). The activity log and the payload's stdout
-  (`make test` streams it back) show what happened.
+  (`fps60/platform_ps5.c`). The Logs tab (or `/data/fps60/fps60.log`) shows
+  what happened.
 
 ## CI
 

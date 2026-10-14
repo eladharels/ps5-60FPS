@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "log.h"
 #include "titles.h"
 #include "util.h"
 
@@ -209,6 +210,7 @@ paramjson_parse(const char *json, title_t *out) {
 }
 
 
+// Returns 0 on success, -1 when the file is missing, -2 when it is unreadable.
 static int
 load_meta(const char *path, title_t *out) {
   size_t len;
@@ -224,7 +226,7 @@ load_meta(const char *path, title_t *out) {
     rc = paramjson_parse(buf, out);
   }
   free(buf);
-  return rc;
+  return rc ? -2 : 0;
 }
 
 
@@ -276,24 +278,39 @@ titles_scan(titles_t *t, const char *const *roots) {
   for(int r=0; roots[r]; r++) {
     DIR *dir = opendir(roots[r]);
     struct dirent *e;
+    int folders = 0;
+    int read = 0;
 
     if(!dir) {
+      LOGD("scan %s: not present", roots[r]);
       continue;
     }
     while((e=readdir(dir))) {
+      int rc = -1;
       if(!is_title_id(e->d_name)) {
         continue;
       }
-      for(int m=0; META_FILES[m]; m++) {
+      folders++;
+      for(int m=0; META_FILES[m] && rc; m++) {
         snprintf(path, sizeof(path), "%s/%s/%s", roots[r], e->d_name,
                  META_FILES[m]);
-        if(!load_meta(path, &found)) {
+        if(!(rc=load_meta(path, &found))) {
+          LOGD("%s \"%s\" version %s (%s) from %s", e->d_name, found.name,
+               found.version[0] ? found.version : "?",
+               found.ps5 ? "PS5" : "PS4", path);
           merge(t, &found, e->d_name);
-          break;
+          read++;
+        } else if(rc == -2) {
+          LOGW("could not parse %s", path);
         }
+      }
+      if(rc) {
+        LOGD("%s/%s: no readable metadata", roots[r], e->d_name);
       }
     }
     closedir(dir);
+    LOGI("scan %s: %d title folders, %d with metadata", roots[r], folders,
+         read);
   }
 
   if(t->n) {

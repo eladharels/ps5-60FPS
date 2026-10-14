@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -7,6 +8,7 @@
 #include <unistd.h>
 
 #include "http.h"
+#include "log.h"
 
 
 #define MAX_REQUEST 8192
@@ -168,7 +170,7 @@ http_serve(int port, http_handler_t handler) {
   int srv;
 
   if((srv=socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-    perror("socket");
+    LOGE("socket: %s", strerror(errno));
     return -1;
   }
   setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
@@ -178,7 +180,7 @@ http_serve(int port, http_handler_t handler) {
   addr.sin_port = htons(port);
   addr.sin_addr.s_addr = htonl(INADDR_ANY);
   if(bind(srv, (struct sockaddr*)&addr, sizeof(addr)) || listen(srv, 8)) {
-    perror("bind");
+    LOGE("bind port %d: %s", port, strerror(errno));
     close(srv);
     return -1;
   }
