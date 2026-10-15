@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "log.h"
+#include "platform.h"
 #include "titles.h"
 #include "util.h"
 
@@ -287,7 +288,7 @@ titles_scan(titles_t *t, const char *const *roots) {
     }
     while((e=readdir(dir))) {
       int rc = -1;
-      if(!is_title_id(e->d_name)) {
+      if(!is_title_id(e->d_name) || !strcmp(e->d_name, FPS60_TILE_TID)) {
         continue;
       }
       folders++;

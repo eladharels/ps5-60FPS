@@ -41,10 +41,18 @@ Keep the loader port on the LAN only: anything that can reach 9021 can run code 
 
 ## fps60
 
-Send `fps60.elf` once per boot. The console shows a notification with the
+Send `fps60.elf` once per boot. To update it, just send the new one: it asks
+the running copy to stop and takes over. To stop it, use **Stop fps60** on
+the Logs tab, or kill `fps60.elf` in Payload Manager's process list. The console shows a notification with the
 address of the page, `http://<ps5-ip>:8060`. Open it on a phone or computer on
 the same network.
 
+- **Home screen tile:** fps60 adds an **fps60** tile (with a 60 FPS icon) to
+  the Media section of the home screen. It opens the page in the console's
+  browser at `http://127.0.0.1:8060/`, so you don't need a phone. The tile
+  only works while fps60 is running. Remove or reinstall it on the Settings
+  tab; once removed, fps60 doesn't add it back. To have fps60 running after
+  every jailbreak, add `fps60.elf` to Payload Manager's autoload list.
 - The page lists your installed games. Games with a 60 FPS patch for the
   installed version come first, with a switch per patch.
 - Switch a patch on and fps60 applies it every time that game starts. Your

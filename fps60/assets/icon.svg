@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%">
+      <stop offset="0" stop-color="#23315e"/>
+      <stop offset="0.55" stop-color="#121a36"/>
+      <stop offset="1" stop-color="#070a16"/>
+    </radialGradient>
+    <linearGradient id="arc" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3d7bff"/>
+      <stop offset="0.6" stop-color="#36d1ff"/>
+      <stop offset="1" stop-color="#5dffb0"/>
+    </linearGradient>
+    <linearGradient id="num" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#c9d8ff"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="14" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <!-- speedometer: dim track, lit arc, ticks, needle pinned near the top -->
+  <g transform="translate(512 560)">
+    <path d="M -360 0 A 360 360 0 0 1 360 0" fill="none" stroke="#ffffff" stroke-opacity="0.09"
+          stroke-width="44" stroke-linecap="round"/>
+    <path d="M -360 0 A 360 360 0 0 1 333 -137" fill="none" stroke="url(#arc)"
+          stroke-width="44" stroke-linecap="round" filter="url(#glow)"/>
+    <g stroke="#ffffff" stroke-opacity="0.55" stroke-width="10" stroke-linecap="round">
+      <line x1="-300" y1="0" x2="-268" y2="0" transform="rotate(0)"/>
+      <line x1="-300" y1="0" x2="-268" y2="0" transform="rotate(30)"/>
+      <line x1="-300" y1="0" x2="-268" y2="0" transform="rotate(60)"/>
+      <line x1="-300" y1="0" x2="-268" y2="0" transform="rotate(90)"/>
+      <line x1="-300" y1="0" x2="-268" y2="0" transform="rotate(120)"/>
+      <line x1="-300" y1="0" x2="-268" y2="0" transform="rotate(150)"/>
+      <line x1="-300" y1="0" x2="-268" y2="0" transform="rotate(180)"/>
+    </g>
+  </g>
+
+  <text x="512" y="660" text-anchor="middle" fill="url(#num)"
+        font-family="DejaVu Sans, Carlito, sans-serif" font-weight="700"
+        font-size="390" letter-spacing="-18">60</text>
+  <text x="512" y="842" text-anchor="middle" fill="#5dffb0"
+        font-family="DejaVu Sans, Carlito, sans-serif" font-weight="700"
+        font-size="150" letter-spacing="34">FPS</text>
+</svg>
