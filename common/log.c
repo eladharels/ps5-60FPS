@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "log.h"
 
@@ -27,7 +28,17 @@ static unsigned long g_next = 1;
 static FILE *g_file;
 static long g_file_size;
 
+static char g_name[32] = "payload";
+
 static const char *const LEVELS[] = {"debug", "info", "warn", "error"};
+
+
+void
+log_set_name(const char *name) {
+  pthread_mutex_lock(&g_lock);
+  snprintf(g_name, sizeof(g_name), "%s", name);
+  pthread_mutex_unlock(&g_lock);
+}
 
 
 void
@@ -83,7 +94,7 @@ log_msg(int level, const char *fmt, ...) {
   }
 
   format_line(line, sizeof(line), e);
-  printf("[fps60] %s\n", line);
+  printf("[%s] %s\n", g_name, line);
   fflush(stdout);
   if(g_file && g_file_size < LOG_FILE_MAX) {
     int n = fprintf(g_file, "%s\n", line);
@@ -106,8 +117,9 @@ log_json(strbuf_t *sb, unsigned long since) {
 
   pthread_mutex_lock(&g_lock);
   oldest = g_next > LOG_CAP ? g_next - LOG_CAP : 1;
-  sb_printf(sb, "{\"next\":%lu,\"dropped\":%s,\"entries\":[", g_next - 1,
-            since + 1 < oldest ? "true" : "false");
+  // The pid tells the page when a new copy replaced the one it was reading.
+  sb_printf(sb, "{\"pid\":%d,\"next\":%lu,\"dropped\":%s,\"entries\":[",
+            (int)getpid(), g_next - 1, since + 1 < oldest ? "true" : "false");
   for(unsigned long s=(since + 1 > oldest ? since + 1 : oldest); s<g_next; s++) {
     const entry_t *e = &g_ring[s % LOG_CAP];
     sb_printf(sb, "%s{\"seq\":%lu,\"time\":%lld,\"level\":\"%s\",\"msg\":",

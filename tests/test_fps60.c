@@ -9,8 +9,9 @@
 #include <unistd.h>
 
 #include "../fps60/app.h"
-#include "../fps60/http.h"
-#include "../fps60/log.h"
+#include "http.h"
+#include "log.h"
+#include "service.h"
 #include "../fps60/patchdb.h"
 #include "../fps60/patcher.h"
 #include "../fps60/platform.h"
@@ -43,6 +44,15 @@ static char fake_tid[16] = "CUSA00001";
 
 const char fps60_ui_html[] = "<html>fps60</html>";
 const char fps60_patches_db[] = "";
+const unsigned char fps60_icon_png[] = {0x89, 'P', 'N', 'G'};
+const unsigned long fps60_icon_png_size = 4;
+const char common_ui_css[] = "/* css */";
+const char common_ui_js[] = "/* js */";
+
+// Recorded by common/sys_host.c.
+extern int sys_host_tile;
+extern int sys_host_tile_installs;
+extern int sys_host_tile_port;
 
 int
 plat_list_game_procs(game_proc_t *out, int max) {
@@ -93,42 +103,11 @@ plat_write(pid_t pid, intptr_t addr, const void *buf, size_t len) {
 }
 
 static int fake_diagnosed;
-static int fake_tile;
-static int fake_tile_installs;
-
-int
-plat_tile_install(int port) {
-  CHECK(port == 8060);
-  fake_tile = 1;
-  fake_tile_installs++;
-  return 0;
-}
-
-int
-plat_tile_remove(void) {
-  fake_tile = 0;
-  return 0;
-}
-
-int
-plat_tile_installed(void) {
-  return fake_tile;
-}
-
-void
-plat_set_process_name(const char *name) {
-  (void)name;
-}
-
 void
 plat_diagnose(void) {
   fake_diagnosed++;
 }
 
-void
-plat_notify(const char *msg) {
-  (void)msg;
-}
 
 static void
 fake_reset(void) {
@@ -296,6 +275,13 @@ test_metadata(void) {
   CHECK(!strcmp(t.name, "Jeu \xc3\xa9 \"deux\""));
   CHECK(t.ps5);
   CHECK(paramjson_parse("{\"contentVersion\":\"01.000.000\"}", &t) == -1);
+
+  // A \u escape cut short at the end of the file is rejected, not overread.
+  {
+    char *json = strdup("{\"titleId\":\"\\u1\"");
+    CHECK(paramjson_parse(json, &t) == -1);
+    free(json);
+  }
 }
 
 
@@ -391,6 +377,10 @@ request(const char *method, const char *target, http_resp_t *resp) {
   resp->status = 200;
   CHECK(http_parse_request(raw, &req) == 0);
   fps60_handle(&req, resp);
+  // What the HTTP layer does once the reply is sent.
+  if(resp->after) {
+    resp->after();
+  }
 }
 
 
@@ -413,7 +403,12 @@ test_http(void) {
 
 static void
 test_app(void) {
-  char settings[300], r1[300], r2[300];
+  char settings[300], r1[300], r2[300], datadir[300];
+  service_info_t info = {
+    .name = "fps60", .proc_name = "fps60.elf", .port = 8060,
+    .tile_tid = "FPSU00060", .icon = fps60_icon_png,
+    .icon_size = sizeof(fps60_icon_png),
+  };
   const char *roots[] = {r1, r2, NULL};
   http_resp_t resp;
 
@@ -423,6 +418,10 @@ test_app(void) {
   snprintf(r1, sizeof(r1), "%s/appmeta", tmpdir);
   snprintf(r2, sizeof(r2), "%s/patch", tmpdir);
   CHECK(app_init(DB, settings, roots) == 0);
+
+  snprintf(datadir, sizeof(datadir), "%s/data/fps60", tmpdir);
+  info.data_dir = datadir;
+  service_setup(&info);
 
   request("GET", "/", &resp);
   CHECK(resp.status == 200 && strstr(resp.body.data, "fps60"));
@@ -469,6 +468,17 @@ test_app(void) {
   CHECK(fake_writes == 1);
   app_tick();
   CHECK(fake_writes == 1); // applied once per process
+
+  // Turning the patch off and on while the game runs doesn't apply it again
+  // (a mask patch would no longer find its pattern).
+  request("POST", "/api/toggle?tid=CUSA00001&name=60%20FPS&on=0", &resp);
+  sb_free(&resp.body);
+  app_tick();
+  request("POST", "/api/toggle?tid=CUSA00001&name=60%20FPS&on=1", &resp);
+  sb_free(&resp.body);
+  app_tick();
+  app_tick();
+  CHECK(fake_writes == 1);
 
   request("GET", "/api/state", &resp);
   CHECK(strstr(resp.body.data, "\"running\":[{\"pid\":4242") != NULL);
@@ -528,7 +538,8 @@ test_logs(void) {
   // The app tests above already logged; find where the ring is now.
   sb_init(&sb);
   log_json(&sb, 0);
-  CHECK(sscanf(sb.data, "{\"next\":%lu", &next) == 1);
+  CHECK(strstr(sb.data, "{\"pid\":") == sb.data);
+  CHECK(sscanf(strstr(sb.data, "\"next\":"), "\"next\":%lu", &next) == 1);
   CHECK(strstr(sb.data, "\"dropped\":false") != NULL);
   CHECK(strstr(sb.data, "game started: CUSA00001") != NULL);
   CHECK(strstr(sb.data, "wrote 1 bytes at") != NULL);
@@ -572,33 +583,49 @@ test_logs(void) {
   request("POST", "/api/diagnose", &resp);
   CHECK(resp.status == 200 && fake_diagnosed == 1);
   sb_free(&resp.body);
+  // Shared routes answer through fps60's handler.
+  request("GET", "/api/service", &resp);
+  CHECK(resp.status == 200 && strstr(resp.body.data, "\"name\":\"fps60\""));
+  CHECK(strstr(resp.body.data, "\"logRoute\":\"/fps60.log\"") != NULL);
+  sb_free(&resp.body);
+  request("GET", "/icon.png", &resp);
+  CHECK(resp.status == 200 && !strcmp(resp.type, "image/png") &&
+        resp.body.len == 4);
+  sb_free(&resp.body);
+  request("GET", "/ui/common.js", &resp);
+  CHECK(resp.status == 200 && !strncmp(resp.type, "text/javascript", 15));
+  sb_free(&resp.body);
+  request("GET", "/ui/common.css", &resp);
+  CHECK(resp.status == 200 && !strncmp(resp.type, "text/css", 8));
+  sb_free(&resp.body);
+
   // Tile: installed at startup, removal is remembered across restarts.
-  app_tile_startup(8060);
-  CHECK(fake_tile && fake_tile_installs == 1);
-  request("GET", "/api/state", &resp);
+  service_announce();
+  CHECK(sys_host_tile && sys_host_tile_installs == 1 && sys_host_tile_port == 8060);
+  request("GET", "/api/service", &resp);
   CHECK(strstr(resp.body.data, "\"tile\":true") != NULL);
   sb_free(&resp.body);
   request("POST", "/api/tile?on=0", &resp);
   CHECK(resp.status == 200 && strstr(resp.body.data, "\"tile\":false"));
   sb_free(&resp.body);
-  app_tile_startup(8060);
-  CHECK(!fake_tile && fake_tile_installs == 1);
+  service_announce();
+  CHECK(!sys_host_tile && sys_host_tile_installs == 1);
   request("POST", "/api/tile?on=1", &resp);
-  CHECK(resp.status == 200 && fake_tile && fake_tile_installs == 2);
+  CHECK(resp.status == 200 && sys_host_tile && sys_host_tile_installs == 2);
   sb_free(&resp.body);
-  app_tile_startup(8060);
-  CHECK(fake_tile_installs == 3);
+  service_announce();
+  CHECK(sys_host_tile_installs == 3);
   request("POST", "/api/tile", &resp);
   CHECK(resp.status == 400);
   sb_free(&resp.body);
 
   request("GET", "/api/quit", &resp);
-  CHECK(resp.status == 405 && !fps60_stop);
+  CHECK(resp.status == 405 && !service_stop);
   sb_free(&resp.body);
   request("POST", "/api/quit", &resp);
-  CHECK(resp.status == 200 && fps60_stop);
+  CHECK(resp.status == 200 && service_stop);
   sb_free(&resp.body);
-  fps60_stop = 0;
+  service_stop = 0;
 }
 
 

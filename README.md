@@ -6,6 +6,13 @@ Homebrew ELF payloads for the PS5, built with the [PS5 payload SDK](https://gith
 | --- | --- |
 | `hello.elf` | Prints its pid and uid. Use it to check the loader works. |
 | `fps60.elf` | Finds installed games that have a known 60 FPS patch and applies the ones you switch on, from a web page on your phone. |
+| `NetDis.elf` | Shows every TCP and UDP port in use on the console, which process owns it, and whether your network can reach it. |
+
+fps60 and NetDis work the same way: send the ELF once per boot, open its tile
+under Media on the home screen (or the address from its notification on a
+phone), and manage it from the Logs and Settings tabs. Sending a newer copy
+replaces the running one; stop it from Settings or kill it in Payload
+Manager.
 
 The SDK only compiles payloads. The console must already be exploited and
 running an ELF loader that listens on port 9021. On firmware 13.60 that is the
@@ -33,6 +40,7 @@ existing checkout instead.
 export PS5_HOST=<ps5-lan-ip> PS5_PORT=9021
 make test                     # hello.elf
 make test PAYLOAD=fps60.elf   # fps60
+make test PAYLOAD=NetDis.elf  # NetDis
 # or, without the SDK deploy tool:
 socat -t 99999999 - TCP:<ps5-lan-ip>:9021 < fps60.elf
 ```
@@ -107,6 +115,37 @@ publishes it next to the ELF) to `/data/fps60/patches.db` on the console.
   the metadata paths in `fps60/titles.c` and how a running game is detected
   (`fps60/platform_ps5.c`). The Logs tab (or `/data/fps60/fps60.log`) shows
   what happened.
+
+## NetDis
+
+Port `8070`, tile `NetDis` under Media (title ID `NETD00001`), data in
+`/data/netdis`.
+
+- **Ports** tab: listening ports by default, or all connections or every
+  socket. Each row shows the owning process (and the game's title ID), and
+  whether the port is reachable from your **Network** or only from **This
+  console**. It refreshes every 2 seconds; Pause freezes it, column headers
+  sort, and new sockets are highlighted.
+- **Processes** tab: every process with sockets and its ports.
+- **Logs** tab: what NetDis did; **Diagnose** logs every socket found and how.
+
+How it works: each process's descriptor table (the interface FreeBSD's
+`procstat` uses) gives the sockets, their addresses and their owner. TCP
+states (LISTEN, ESTABLISHED, TIME_WAIT, …) come from the kernel's TCP list.
+That list embeds kernel structures, so NetDis uses it in full only when its
+record sizes match the SDK headers; otherwise it only takes the listening
+flag. Settings > About shows which mode is active. Sockets no process holds
+any more (such as TIME_WAIT) appear as "(no process)".
+
+## Repository layout
+
+| Folder | Contents |
+| --- | --- |
+| `common/` | Shared by the payloads: web server, logs, startup/replace/stop (`service.c`), console helpers (`sys_ps5.c`: notifications, process name, home screen tile), and the page framework with the Logs and Settings tabs (`ui/`). |
+| `fps60/` | Game scanning, patch database and patcher, and the Games page. |
+| `netdis/` | Socket collection and the Ports and Processes pages. |
+| `tests/` | Host tests (`make check`), run in CI before the build. |
+| `tools/` | Patch database converter and the file embedder. |
 
 ## CI
 

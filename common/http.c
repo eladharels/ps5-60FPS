@@ -1,11 +1,14 @@
 #include <errno.h>
 #include <signal.h>
 #include <netinet/in.h>
+#include <poll.h>
+#include <pthread.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "http.h"
@@ -13,6 +16,11 @@
 
 
 #define MAX_REQUEST 8192
+// A client gets this long to send its request line and headers. Browsers
+// open idle spare connections, so this must stay short.
+#define REQUEST_DEADLINE_MS 3000
+// Connections served at once; more are answered 503 straight away.
+#define MAX_ACTIVE 16
 
 
 int
@@ -120,10 +128,23 @@ handle_conn(int fd, http_handler_t handler) {
   char head[256];
   int n;
 
+  struct timespec start, now;
+
   // Only the request line and headers matter; the API takes no bodies.
+  clock_gettime(CLOCK_MONOTONIC, &start);
   while(len < MAX_REQUEST) {
-    ssize_t r = read(fd, buf + len, MAX_REQUEST - len);
-    if(r <= 0) {
+    struct pollfd pfd = {.fd = fd, .events = POLLIN};
+    long waited;
+    ssize_t r;
+
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    waited = (now.tv_sec - start.tv_sec) * 1000 +
+             (now.tv_nsec - start.tv_nsec) / 1000000;
+    if(waited >= REQUEST_DEADLINE_MS ||
+       poll(&pfd, 1, REQUEST_DEADLINE_MS - waited) <= 0) {
+      return;
+    }
+    if((r=read(fd, buf + len, MAX_REQUEST - len)) <= 0) {
       return;
     }
     len += r;
@@ -160,6 +181,42 @@ handle_conn(int fd, http_handler_t handler) {
     send_all(fd, resp.body.data, resp.body.len);
   }
   sb_free(&resp.body);
+  if(resp.after) {
+    resp.after();
+  }
+}
+
+
+typedef struct conn {
+  int            fd;
+  http_handler_t handler;
+} conn_t;
+
+static pthread_mutex_t g_active_lock = PTHREAD_MUTEX_INITIALIZER;
+static int g_active;
+
+
+static void *
+conn_thread(void *arg) {
+  conn_t *c = arg;
+
+  handle_conn(c->fd, c->handler);
+  close(c->fd);
+  free(c);
+  pthread_mutex_lock(&g_active_lock);
+  g_active--;
+  pthread_mutex_unlock(&g_active_lock);
+  return NULL;
+}
+
+
+static void
+reject_busy(int fd) {
+  static const char busy[] =
+    "HTTP/1.0 503 Service Unavailable\r\nContent-Length: 0\r\n"
+    "Connection: close\r\n\r\n";
+  send_all(fd, busy, sizeof(busy) - 1);
+  close(fd);
 }
 
 
@@ -192,18 +249,47 @@ http_listen(int port) {
 void
 http_serve(int srv, http_handler_t handler, volatile sig_atomic_t *stop) {
   struct timeval tv = {5, 0};
+  pthread_attr_t attr;
+
+  pthread_attr_init(&attr);
+  pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
   while(!*stop) {
-    int fd = accept(srv, NULL, NULL);
-    if(fd < 0) {
-      continue; // EINTR from a stop signal lands here
+    struct pollfd pfd = {.fd = srv, .events = POLLIN};
+    pthread_t thread;
+    conn_t *c;
+    int fd;
+
+    // Wake up regularly so a stop request is noticed without a new client.
+    if(poll(&pfd, 1, 250) <= 0) {
+      continue;
     }
-    // A stalled client must not block the UI for everyone else.
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    if((fd=accept(srv, NULL, NULL)) < 0) {
+      continue;
+    }
+    // A stalled client must not hold a thread for long.
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-    handle_conn(fd, handler);
-    close(fd);
+
+    pthread_mutex_lock(&g_active_lock);
+    if(g_active >= MAX_ACTIVE || !(c=malloc(sizeof(*c)))) {
+      pthread_mutex_unlock(&g_active_lock);
+      reject_busy(fd);
+      continue;
+    }
+    g_active++;
+    pthread_mutex_unlock(&g_active_lock);
+
+    c->fd = fd;
+    c->handler = handler;
+    if(pthread_create(&thread, &attr, conn_thread, c)) {
+      pthread_mutex_lock(&g_active_lock);
+      g_active--;
+      pthread_mutex_unlock(&g_active_lock);
+      free(c);
+      reject_busy(fd);
+    }
   }
+  pthread_attr_destroy(&attr);
   close(srv);
 }
 

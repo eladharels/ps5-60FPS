@@ -13,6 +13,9 @@ enum {
   LOG_ERROR,
 };
 
+// Prefix for lines on stdout, e.g. "fps60".
+void log_set_name(const char *name);
+
 // Opens `path` for appending, keeping the previous run as `path`.1.
 void log_open(const char *path);
 

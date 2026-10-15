@@ -14,6 +14,7 @@ typedef struct http_resp {
   int         status;
   const char *type;
   strbuf_t    body;
+  void      (*after)(void);  // runs once the response has been sent
 } http_resp_t;
 
 typedef void (*http_handler_t)(const http_req_t *req, http_resp_t *resp);
@@ -28,7 +29,8 @@ int http_query_get(const char *query, const char *key, char *out, size_t outlen)
 // Binds and listens on `port`. Returns the socket, or -1 with errno set.
 int http_listen(int port);
 
-// Serves requests on `srv` until `*stop` is set, then closes it.
+// Serves requests on `srv` until `*stop` is set, then closes it. Each
+// connection runs on its own thread, so handlers must be thread-safe.
 void http_serve(int srv, http_handler_t handler, volatile sig_atomic_t *stop);
 
 // Sends `POST path` to this console's own server on `port`. Returns 0 on a

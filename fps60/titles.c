@@ -1,10 +1,10 @@
+#include <ctype.h>
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "log.h"
-#include "platform.h"
 #include "titles.h"
 #include "util.h"
 
@@ -20,6 +20,21 @@ const char *const TITLE_ROOTS[] = {
   "/user/patch",
   NULL
 };
+
+// Home screen tiles of this repo's payloads; not games.
+static const char *const OWN_TILES[] = {"FPSU00060", "NETD00001", NULL};
+
+
+static int
+is_own_tile(const char *tid) {
+  for(int i=0; OWN_TILES[i]; i++) {
+    if(!strcmp(tid, OWN_TILES[i])) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
 
 static const char *const META_FILES[] = {
   "param.json",
@@ -155,9 +170,14 @@ json_read_str(const char *p, char *out, size_t outlen) {
     if(*p == '\\') {
       p++;
       if(*p == 'u') {
-        unsigned cp;
-        if(sscanf(p + 1, "%4x", &cp) != 1) {
-          return -1;
+        unsigned cp = 0;
+        // Exactly four hex digits; anything shorter would skip past the end.
+        for(int i=1; i<=4; i++) {
+          int c = (unsigned char)p[i];
+          if(!isxdigit(c)) {
+            return -1;
+          }
+          cp = cp << 4 | (isdigit(c) ? c - '0' : (c | 0x20) - 'a' + 10);
         }
         utf8_put(&o, end, cp);
         p += 5;
@@ -288,7 +308,7 @@ titles_scan(titles_t *t, const char *const *roots) {
     }
     while((e=readdir(dir))) {
       int rc = -1;
-      if(!is_title_id(e->d_name) || !strcmp(e->d_name, FPS60_TILE_TID)) {
+      if(!is_title_id(e->d_name) || is_own_tile(e->d_name)) {
         continue;
       }
       folders++;
