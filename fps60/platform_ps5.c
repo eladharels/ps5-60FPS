@@ -8,6 +8,7 @@
 
 #include <ps5/kernel.h>
 
+#include "log.h"
 #include "platform.h"
 #include "util.h"
 
@@ -77,6 +78,7 @@ intptr_t
 plat_module_base(pid_t pid, const char *elf) {
   uint32_t handle;
 
+  // Called every 100 ms while a game loads, so it must not log.
   if(kernel_dynlib_handle(pid, elf, &handle)) {
     return 0;
   }
@@ -102,7 +104,7 @@ void
 plat_notify(const char *msg) {
   strbuf_t sb;
 
-  printf("[fps60] %s\n", msg);
+  LOGI("notification: %s", msg);
 
   sb_init(&sb);
   sb_puts(&sb, "{\"rawData\":{\"viewTemplateType\":\"InteractiveToastTemplateB\","
@@ -113,8 +115,9 @@ plat_notify(const char *msg) {
   sb_json_str(&sb, msg);
   sb_puts(&sb, "}}},\"createdDateTime\":\"2026-01-01T00:00:00.000Z\","
 	  "\"localNotificationId\":\"60600060\"}");
-  if(!sb.oom) {
-    sceNotificationSend(SCE_NOTIFICATION_LOCAL_USER_ID_SYSTEM, true, sb.data);
+  if(!sb.oom &&
+     sceNotificationSend(SCE_NOTIFICATION_LOCAL_USER_ID_SYSTEM, true, sb.data)) {
+    LOGW("could not show the notification on screen");
   }
   sb_free(&sb);
 }

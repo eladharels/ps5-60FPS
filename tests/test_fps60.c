@@ -10,6 +10,7 @@
 
 #include "../fps60/app.h"
 #include "../fps60/http.h"
+#include "../fps60/log.h"
 #include "../fps60/patchdb.h"
 #include "../fps60/patcher.h"
 #include "../fps60/platform.h"
@@ -485,6 +486,57 @@ test_app(void) {
 
 
 static void
+test_logs(void) {
+  http_resp_t resp;
+  strbuf_t sb;
+  char *p;
+  unsigned long next;
+
+  // The app tests above already logged; find where the ring is now.
+  sb_init(&sb);
+  log_json(&sb, 0);
+  CHECK(sscanf(sb.data, "{\"next\":%lu", &next) == 1);
+  CHECK(strstr(sb.data, "\"dropped\":false") != NULL);
+  CHECK(strstr(sb.data, "game started: CUSA00001") != NULL);
+  CHECK(strstr(sb.data, "wrote 1 bytes at") != NULL);
+  CHECK(strstr(sb.data, "with metadata") != NULL);
+  sb_free(&sb);
+
+  // Only newer entries are returned, with JSON escaping intact.
+  LOGW("quote \" and\nnewline");
+  sb_init(&sb);
+  log_json(&sb, next);
+  CHECK(strstr(sb.data, "\"level\":\"warn\"") != NULL);
+  CHECK(strstr(sb.data, "\"msg\":\"quote \\\" and newline\"") != NULL);
+  CHECK(strstr(sb.data, "game started") == NULL);
+  sb_free(&sb);
+
+  // Wrap the 1000-entry ring: old entries drop and the client is told.
+  for(int i=0; i<1100; i++) {
+    LOGD("filler %d", i);
+  }
+  sb_init(&sb);
+  log_json(&sb, next);
+  CHECK(strstr(sb.data, "\"dropped\":true") != NULL);
+  CHECK(strstr(sb.data, "filler 1099") != NULL);
+  CHECK(strstr(sb.data, "filler 99\"") == NULL);
+  sb_free(&sb);
+
+  request("GET", "/api/logs?since=0", &resp);
+  CHECK(resp.status == 200 && strstr(resp.body.data, "filler 1099"));
+  sb_free(&resp.body);
+  request("GET", "/fps60.log", &resp);
+  CHECK(resp.status == 200 && !strncmp(resp.type, "text/plain", 10));
+  p = resp.body.data;
+  CHECK(p && strstr(p, "debug filler 1099\n") != NULL);
+  sb_free(&resp.body);
+  request("POST", "/api/logs", &resp);
+  CHECK(resp.status == 405);
+  sb_free(&resp.body);
+}
+
+
+static void
 test_real_db(const char *path) {
   char *text = read_file(path, NULL);
   patchdb_t db;
@@ -516,6 +568,7 @@ main(int argc, char **argv) {
   test_titles();
   test_http();
   test_app();
+  test_logs();
   if(argc > 1) {
     test_real_db(argv[1]);
   }

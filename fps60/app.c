@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 
 #include "app.h"
+#include "log.h"
 #include "patcher.h"
 #include "platform.h"
 
@@ -72,8 +73,8 @@ log_push(const char *tid, const char *title, const char *name,
   if(g_nlog < MAX_LOG) {
     g_nlog++;
   }
-  printf("[fps60] %s %s (%s %s): %s\n", ok ? "OK  " : "FAIL", tid, name,
-         version, msg);
+  log_msg(ok ? LOG_INFO : LOG_ERROR, "%s %s \"%s\" (version %s): %s",
+          ok ? "applied" : "failed", tid, name, version[0] ? version : "?", msg);
 }
 
 
@@ -187,15 +188,18 @@ app_init(const char *db_text, const char *settings_path,
   int err;
 
   if((err=patchdb_parse(&g_db, db_text))) {
-    printf("[fps60] patch database error at line %d\n", err);
+    LOGE("patch database error at line %d", err);
     return -1;
   }
   snprintf(g_settings, sizeof(g_settings), "%s", settings_path);
   g_roots = title_roots;
   settings_load();
+  for(int i=0; i<g_nenabled; i++) {
+    LOGI("enabled: %s \"%s\"", g_enabled[i].tid, g_enabled[i].name);
+  }
   titles_scan(&g_titles, g_roots);
-  printf("[fps60] %d patches, %d installed titles, %d enabled\n",
-         g_db.npatches, g_titles.n, g_nenabled);
+  LOGI("%d patches loaded, %d installed titles, %d patches enabled",
+       g_db.npatches, g_titles.n, g_nenabled);
   return 0;
 }
 
@@ -205,6 +209,7 @@ app_rescan(void) {
   pthread_mutex_lock(&g_lock);
   titles_free(&g_titles);
   titles_scan(&g_titles, g_roots);
+  LOGI("rescan: %d installed titles", g_titles.n);
   pthread_mutex_unlock(&g_lock);
 }
 
@@ -223,6 +228,7 @@ app_toggle(const char *tid, const char *name, int on) {
     }
   }
   if(!known) {
+    LOGW("toggle refused: no supported patch \"%s\" for %s", name, tid);
     rc = -1;
   } else {
     if(on) {
@@ -230,7 +236,10 @@ app_toggle(const char *tid, const char *name, int on) {
     } else {
       remove_enabled(tid, name);
     }
-    rc = settings_save();
+    if((rc=settings_save())) {
+      LOGE("could not save %s", g_settings);
+    }
+    LOGI("%s %s \"%s\"", on ? "enabled" : "disabled", tid, name);
   }
   pthread_mutex_unlock(&g_lock);
   return rc;
@@ -359,6 +368,7 @@ track(pid_t pid, const char *tid) {
     }
   }
   if(g_nprocs >= MAX_PROCS) {
+    LOGW("too many game processes to follow; ignoring pid %d", (int)pid);
     return NULL;
   }
   t = &g_procs[g_nprocs++];
@@ -371,6 +381,7 @@ track(pid_t pid, const char *tid) {
 
 static void
 untrack(int i) {
+  LOGI("game exited: %s pid %d", g_procs[i].tid, (int)g_procs[i].pid);
   for(int j=0; j<g_procs[i].nnoted; j++) {
     free(g_procs[i].noted[j]);
   }
@@ -469,6 +480,7 @@ static void
 handle_patch(tracked_t *t, const char *name, const char *tname,
              const char *version) {
   char msg[160];
+  intptr_t base;
   int any = 0;
   int waiting = 0;
 
@@ -484,13 +496,24 @@ handle_patch(tracked_t *t, const char *name, const char *tname,
       continue;
     }
     if(applied_elsewhere(t, k)) {
+      LOGD("%s pid %d: \"%s\" for %s already applied in another process",
+           t->tid, (int)t->pid, name, p->appelf);
       mark_done(t, k, 0);
       continue;
     }
-    if(!plat_module_base(t->pid, p->appelf)) {
+    if(!(base=plat_module_base(t->pid, p->appelf))) {
+      if(!t->ticks) {
+        LOGD("%s pid %d: waiting for %s to load", t->tid, (int)t->pid,
+             p->appelf);
+      }
       waiting = 1;
       continue;
     }
+    LOGI("%s pid %d: %s loaded at 0x%lx after %d ms; applying \"%s\" "
+         "(%d line%s, patch version %s, by %s)", t->tid, (int)t->pid,
+         p->appelf, (unsigned long)base, t->ticks * 100, name, p->nlines,
+         p->nlines == 1 ? "" : "s", p->appver,
+         p->author[0] ? p->author : "?");
     if(patcher_apply(t->pid, p, msg, sizeof(msg))) {
       log_push(t->tid, tname, name, version, 0, msg);
       mark_done(t, k, 0);
@@ -528,6 +551,15 @@ handle_proc(tracked_t *t) {
   const char *version = title ? title->version : "";
   const char *tname = title && title->name[0] ? title->name : t->tid;
 
+  if(!t->ticks) {
+    LOGI("game started: %s \"%s\" pid %d, installed version %s", t->tid,
+         tname, (int)t->pid, version[0] ? version : "unknown");
+    if(!title) {
+      LOGW("%s has no metadata in any scanned folder; see the scan entries "
+           "at startup", t->tid);
+    }
+  }
+
   for(int i=0; i<g_nenabled; i++) {
     if(!strcmp(g_enabled[i].tid, t->tid)) {
       handle_patch(t, g_enabled[i].name, tname, version);
@@ -543,8 +575,18 @@ app_tick(void) {
   int n;
   int rescanned = 0;
 
+  static int list_failed;
+
   if((n=plat_list_game_procs(procs, 256)) < 0) {
+    if(!list_failed) {
+      LOGE("could not list running processes; games will not be patched");
+      list_failed = 1;
+    }
     return;
+  }
+  if(list_failed) {
+    LOGI("listing running processes works again");
+    list_failed = 0;
   }
 
   pthread_mutex_lock(&g_lock);

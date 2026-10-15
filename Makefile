@@ -18,10 +18,12 @@ PATCH_REPO     ?= $(BUILD)/patch-repo
 CFLAGS := -Wall -Werror -g
 
 FPS60_SRCS := fps60/main.c fps60/app.c fps60/http.c fps60/routes.c \
-              fps60/patchdb.c fps60/patcher.c fps60/titles.c fps60/util.c
+              fps60/patchdb.c fps60/patcher.c fps60/titles.c fps60/util.c \
+              fps60/log.c
 FPS60_HDRS := $(wildcard fps60/*.h)
 TEST_SRCS  := tests/test_fps60.c fps60/app.c fps60/http.c fps60/routes.c \
-              fps60/patchdb.c fps60/patcher.c fps60/titles.c fps60/util.c
+              fps60/patchdb.c fps60/patcher.c fps60/titles.c fps60/util.c \
+              fps60/log.c
 
 all: hello.elf fps60.elf
 

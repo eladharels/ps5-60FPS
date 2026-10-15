@@ -8,9 +8,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "app.h"
+#include "log.h"
 #include "platform.h"
 #include "routes.h"
 
@@ -20,6 +22,7 @@
 #define FPS60_SETTINGS FPS60_DIR "/enabled.txt"
 // Drop a newer database here to update patches without rebuilding.
 #define FPS60_DB_FILE  FPS60_DIR "/patches.db"
+#define FPS60_LOG_FILE FPS60_DIR "/fps60.log"
 
 
 static void *
@@ -63,9 +66,13 @@ main(void) {
   char msg[128];
 
   signal(SIGPIPE, SIG_IGN);
+  mkdir(FPS60_DIR, 0755);
+  log_open(FPS60_LOG_FILE);
+  LOGI("fps60 starting (built " __DATE__ " " __TIME__ "), log file %s",
+       FPS60_LOG_FILE);
 
   if((db_text=read_file(FPS60_DB_FILE, NULL))) {
-    printf("[fps60] using %s\n", FPS60_DB_FILE);
+    LOGI("using patch database %s", FPS60_DB_FILE);
   }
   if(app_init(db_text ? db_text : fps60_patches_db, FPS60_SETTINGS,
               TITLE_ROOTS)) {
@@ -73,20 +80,23 @@ main(void) {
       plat_notify("fps60: patch database is invalid");
       return -1;
     }
-    printf("[fps60] %s is invalid, using built-in database\n", FPS60_DB_FILE);
+    LOGW("%s is invalid, using the built-in database", FPS60_DB_FILE);
   }
   free(db_text);
 
   if(pthread_create(&thread, NULL, watcher, NULL)) {
+    LOGE("could not start the watcher thread");
     plat_notify("fps60: could not start watcher");
     return -1;
   }
 
   lan_address(ip, sizeof(ip));
   snprintf(msg, sizeof(msg), "fps60 running: http://%s:%d", ip, FPS60_PORT);
+  LOGI("web page at http://%s:%d", ip, FPS60_PORT);
   plat_notify(msg);
 
   if(http_serve(FPS60_PORT, fps60_handle)) {
+    LOGE("could not listen on port %d", FPS60_PORT);
     plat_notify("fps60: port 8060 busy, is fps60 already running?");
     return -1;
   }

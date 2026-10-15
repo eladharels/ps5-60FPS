@@ -66,6 +66,33 @@
   .log-row:first-child { border-top: 0; }
   .empty { color: var(--muted); text-align: center; padding: 24px 8px; }
   .hint { color: var(--muted); font-size: 13px; margin-top: 18px; }
+  .tabs { display: flex; gap: 4px; margin-top: 14px;
+          border-bottom: 1px solid var(--line); }
+  .tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+         background: none; padding: 8px 14px; color: var(--muted);
+         font-weight: 500; }
+  .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+  .tab .count { font-size: 12px; color: var(--bad); margin-left: 4px; }
+  .log-tools { display: flex; gap: 8px; margin: 14px 0 8px; flex-wrap: wrap;
+               align-items: center; }
+  .log-tools label { display: flex; gap: 6px; align-items: center;
+                     color: var(--muted); font-size: 14px; }
+  .log-tools a { color: var(--accent); font-size: 14px; }
+  .log-status { color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+  #logbox { background: var(--card); border: 1px solid var(--line);
+            border-radius: 10px; padding: 8px 10px; height: 65vh;
+            overflow: auto; font: 12px/1.5 ui-monospace, SFMono-Regular,
+            Menlo, Consolas, monospace; }
+  .ln { white-space: pre-wrap; overflow-wrap: anywhere; padding: 1px 0; }
+  .ln .t { color: var(--muted); }
+  .ln .l { display: inline-block; width: 5.5ch; font-weight: 600; }
+  .ln.debug .l { color: var(--muted); }
+  .ln.info .l { color: var(--accent); }
+  .ln.warn .l { color: var(--warn); }
+  .ln.error .l { color: var(--bad); }
+  .ln.warn { background: var(--warnbg); }
+  .ln.error { background: var(--badbg); }
+  [hidden] { display: none !important; }
   #error { display: none; color: var(--bad); background: var(--badbg);
            padding: 10px 12px; border-radius: 8px; margin-bottom: 10px; }
 </style>
@@ -77,6 +104,16 @@
     <span class="sub" id="summary">Loading…</span>
   </header>
 
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="tabbtn-games" aria-controls="tab-games"
+            aria-selected="true" type="button">Games</button>
+    <button class="tab" role="tab" id="tabbtn-logs" aria-controls="tab-logs"
+            aria-selected="false" type="button">Logs<span class="count" id="errcount"></span></button>
+  </div>
+
+  <div id="error"></div>
+
+  <section id="tab-games" role="tabpanel" aria-labelledby="tabbtn-games">
   <div class="bar">
     <input type="search" id="search" placeholder="Search games or title IDs"
            aria-label="Search games">
@@ -87,7 +124,6 @@
     <button id="rescan" type="button">Rescan</button>
   </div>
 
-  <div id="error"></div>
   <div id="games"></div>
 
   <h2>Activity</h2>
@@ -98,7 +134,27 @@
     applies it right away, but some games only read their frame-rate setting
     at boot, so restart the game if nothing changes. Turning a patch off takes
     effect the next time the game starts. Use patches in offline play only.
+    The Logs tab shows every step in detail.
   </p>
+  </section>
+
+  <section id="tab-logs" role="tabpanel" aria-labelledby="tabbtn-logs" hidden>
+    <div class="log-tools">
+      <select id="loglevel" aria-label="Minimum level">
+        <option value="debug">All levels</option>
+        <option value="info">Info and above</option>
+        <option value="warn">Warnings and errors</option>
+        <option value="error">Errors only</option>
+      </select>
+      <input type="search" id="logsearch" placeholder="Filter lines"
+             aria-label="Filter log lines">
+      <label><input type="checkbox" id="follow" checked> Follow</label>
+      <button id="copylogs" type="button">Copy</button>
+      <a href="/fps60.log" download="fps60.log">Download</a>
+    </div>
+    <div class="log-status" id="logstatus"></div>
+    <div id="logbox" role="log" aria-live="off"></div>
+  </section>
 </main>
 
 <script>
@@ -236,6 +292,125 @@ function render() {
   }
 }
 
+// ---- tabs ----------------------------------------------------------------
+
+function showTab(name) {
+  for (const t of ["games", "logs"]) {
+    $("tab-" + t).hidden = t !== name;
+    $("tabbtn-" + t).setAttribute("aria-selected", String(t === name));
+  }
+  if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+  if (name === "logs") renderLogs(true);
+}
+$("tabbtn-games").addEventListener("click", () => showTab("games"));
+$("tabbtn-logs").addEventListener("click", () => showTab("logs"));
+
+// ---- logs ----------------------------------------------------------------
+
+const LEVELS = ["debug", "info", "warn", "error"];
+const MAX_LINES = 5000;
+let logs = [];
+let logSince = 0;
+let logGap = false;
+let logError = "";
+let unseenErrors = 0;
+
+function fmtTime(sec) {
+  return new Date(sec * 1000).toTimeString().slice(0, 8);
+}
+
+function lineText(e) {
+  return fmtTime(e.time) + " " + e.level.padEnd(5) + " " + e.msg;
+}
+
+function visibleLogs() {
+  const min = LEVELS.indexOf($("loglevel").value);
+  const q = $("logsearch").value.trim().toLowerCase();
+  return logs.filter((e) => LEVELS.indexOf(e.level) >= min &&
+    (!q || e.msg.toLowerCase().includes(q)));
+}
+
+function renderLogs(force) {
+  if ($("tab-logs").hidden && !force) return;
+  const box = $("logbox");
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  const shown = visibleLogs();
+  const frag = document.createDocumentFragment();
+  for (const e of shown) {
+    const row = el("div", "ln " + e.level);
+    row.append(el("span", "t", fmtTime(e.time) + " "), el("span", "l", e.level),
+      " " + e.msg);
+    frag.append(row);
+  }
+  if (!shown.length) frag.append(el("div", "empty", logs.length
+    ? "No lines match the filter." : "No log lines yet."));
+  box.replaceChildren(frag);
+  if ($("follow").checked && (atBottom || force)) box.scrollTop = box.scrollHeight;
+
+  let status = shown.length + " of " + logs.length + " lines";
+  if (logGap) status += " · older lines were dropped; Download has what the console still holds";
+  if (logError) status += " · " + logError;
+  $("logstatus").textContent = status;
+  unseenErrors = 0;
+  $("errcount").textContent = "";
+}
+
+async function pollLogs() {
+  try {
+    const d = await call("GET", "/api/logs?since=" + logSince);
+    if (d.dropped && logSince) logGap = true;
+    logSince = d.next;
+    logError = "";
+    if (d.entries.length) {
+      logs.push(...d.entries);
+      if (logs.length > MAX_LINES) {
+        logs.splice(0, logs.length - MAX_LINES);
+        logGap = true;
+      }
+      if ($("tab-logs").hidden) {
+        unseenErrors += d.entries.filter((e) => e.level === "error").length;
+        $("errcount").textContent = unseenErrors ? unseenErrors : "";
+      }
+      renderLogs(false);
+    } else if (!$("tab-logs").hidden) {
+      renderLogs(false);
+    }
+  } catch (e) {
+    logError = "can't reach fps60: " + e.message;
+    renderLogs(false);
+  }
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) {
+    // Plain http pages have no clipboard API in most browsers.
+    const ta = el("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.append(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  }
+}
+
+$("copylogs").addEventListener("click", async () => {
+  const ok = await copyText(visibleLogs().map(lineText).join("\n") + "\n");
+  const b = $("copylogs");
+  b.textContent = ok ? "Copied" : "Copy failed";
+  setTimeout(() => { b.textContent = "Copy"; }, 1500);
+});
+$("loglevel").addEventListener("change", () => renderLogs(true));
+$("logsearch").addEventListener("input", () => renderLogs(false));
+$("follow").addEventListener("change", () => renderLogs(true));
+
+// ---- games ---------------------------------------------------------------
+
 $("search").addEventListener("input", render);
 $("filter").addEventListener("change", render);
 $("rescan").addEventListener("click", async () => {
@@ -249,7 +424,10 @@ $("rescan").addEventListener("click", async () => {
 });
 
 refresh();
+pollLogs();
 setInterval(refresh, 3000);
+setInterval(pollLogs, 2000);
+showTab(location.hash === "#logs" ? "logs" : "games");
 </script>
 </body>
 </html>
