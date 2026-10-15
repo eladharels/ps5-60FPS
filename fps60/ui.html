@@ -93,6 +93,35 @@
   .ln.warn { background: var(--warnbg); }
   .ln.error { background: var(--badbg); }
   [hidden] { display: none !important; }
+  /* The tile opens this page in the console's browser on a TV, driven by a
+     controller cursor: wider layout, bigger targets, clear focus. */
+  button:focus-visible, select:focus-visible, input:focus-visible,
+  a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .set-row { display: flex; justify-content: space-between; align-items: center;
+             gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .set-row:first-of-type { border-top: 0; }
+  .set-row h3 { font-size: 15px; margin: 0 0 2px; }
+  .set-row .btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  button.danger { color: var(--bad); }
+  dl.info { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px;
+            margin: 0; font-size: 14px; }
+  dl.info dt { color: var(--muted); }
+  dl.info dd { margin: 0; overflow-wrap: anywhere; }
+  @media (min-width: 1100px) {
+    body { font-size: 18px; }
+    main { max-width: 1400px; padding: 28px 40px; }
+    h1 { font-size: 30px; }
+    #games { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+             gap: 14px; align-items: start; }
+    #games .card { margin-bottom: 0; }
+    .tab { padding: 12px 22px; font-size: 18px; }
+    button, select, input[type=search] { padding: 12px 16px; }
+    .switch { width: 64px; height: 38px; }
+    .slider::before { width: 30px; height: 30px; left: 4px; top: 4px; }
+    .switch input:checked + .slider::before { transform: translateX(26px); }
+    .note, .meta, .chip, .sub, .log-status { font-size: 15px; }
+    #logbox { font-size: 14px; height: 70vh; }
+  }
   #error { display: none; color: var(--bad); background: var(--badbg);
            padding: 10px 12px; border-radius: 8px; margin-bottom: 10px; }
 </style>
@@ -109,6 +138,8 @@
             aria-selected="true" type="button">Games</button>
     <button class="tab" role="tab" id="tabbtn-logs" aria-controls="tab-logs"
             aria-selected="false" type="button">Logs<span class="count" id="errcount"></span></button>
+    <button class="tab" role="tab" id="tabbtn-settings" aria-controls="tab-settings"
+            aria-selected="false" type="button">Settings</button>
   </div>
 
   <div id="error"></div>
@@ -153,10 +184,54 @@
       <button id="diagnose" type="button"
               title="Log every process and the modules of game processes">Diagnose</button>
       <a href="/fps60.log" download="fps60.log">Download</a>
-      <button id="stopfps60" type="button">Stop fps60</button>
     </div>
     <div class="log-status" id="logstatus"></div>
     <div id="logbox" role="log" aria-live="off"></div>
+  </section>
+
+  <section id="tab-settings" role="tabpanel" aria-labelledby="tabbtn-settings" hidden>
+    <h2>Home screen</h2>
+    <div class="card">
+      <div class="set-row">
+        <div>
+          <h3>fps60 tile</h3>
+          <div class="note" id="tilestatus"></div>
+        </div>
+        <div class="btns"><button id="tilebtn" type="button"></button></div>
+      </div>
+    </div>
+
+    <h2>fps60 on the console</h2>
+    <div class="card">
+      <div class="set-row">
+        <div>
+          <h3>Rescan installed games</h3>
+          <div class="note">Run this after installing or updating a game.</div>
+        </div>
+        <div class="btns"><button id="rescan2" type="button">Rescan</button></div>
+      </div>
+      <div class="set-row">
+        <div>
+          <h3>Stop fps60</h3>
+          <div class="note">Patches already applied stay in running games.
+            Send fps60.elf again to start it; a newer copy replaces a running one.</div>
+        </div>
+        <div class="btns"><button id="stopfps60" class="danger" type="button">Stop</button></div>
+      </div>
+    </div>
+
+    <h2>About</h2>
+    <div class="card">
+      <dl class="info">
+        <dt>On a phone</dt><dd id="info-url"></dd>
+        <dt>Build</dt><dd id="info-build"></dd>
+        <dt>Patches</dt><dd id="info-patches"></dd>
+        <dt>Settings</dt><dd>/data/fps60/enabled.txt</dd>
+        <dt>Log file</dt><dd>/data/fps60/fps60.log</dd>
+      </dl>
+      <p class="hint">Start fps60 automatically after each jailbreak by adding
+        fps60.elf to Payload Manager's autoload list.</p>
+    </div>
   </section>
 </main>
 
@@ -252,6 +327,7 @@ function patchRow(game, patch) {
 
 function render() {
   if (!state) return;
+  renderSettings();
   const q = $("search").value.trim().toLowerCase();
   const onlyPatched = $("filter").value === "patched";
   const games = state.games
@@ -298,7 +374,7 @@ function render() {
 // ---- tabs ----------------------------------------------------------------
 
 function showTab(name) {
-  for (const t of ["games", "logs"]) {
+  for (const t of ["games", "logs", "settings"]) {
     $("tab-" + t).hidden = t !== name;
     $("tabbtn-" + t).setAttribute("aria-selected", String(t === name));
   }
@@ -307,6 +383,7 @@ function showTab(name) {
 }
 $("tabbtn-games").addEventListener("click", () => showTab("games"));
 $("tabbtn-logs").addEventListener("click", () => showTab("logs"));
+$("tabbtn-settings").addEventListener("click", () => showTab("settings"));
 
 // ---- logs ----------------------------------------------------------------
 
@@ -434,6 +511,36 @@ $("loglevel").addEventListener("change", () => renderLogs(true));
 $("logsearch").addEventListener("input", () => renderLogs(false));
 $("follow").addEventListener("change", () => renderLogs(true));
 
+// ---- settings ------------------------------------------------------------
+
+function renderSettings() {
+  if (!state) return;
+  $("tilestatus").textContent = state.tile
+    ? "On the home screen (Media). It opens this page in the console's browser."
+    : "Not installed. Install it to open this page from the home screen.";
+  $("tilebtn").textContent = state.tile ? "Remove tile" : "Install tile";
+  $("tilebtn").className = state.tile ? "danger" : "";
+  $("info-url").textContent = state.lanUrl || location.origin + "/";
+  $("info-build").textContent = state.build;
+  $("info-patches").textContent = state.dbPatches + " frame-rate patches";
+}
+
+$("tilebtn").addEventListener("click", async () => {
+  const b = $("tilebtn");
+  const on = !state.tile;
+  b.disabled = true;
+  try {
+    state = await call("POST", "/api/tile?on=" + (on ? "1" : "0"));
+    showError("");
+    render();
+  } catch (e) {
+    showError((on ? "Installing" : "Removing") + " the tile failed: " + e.message);
+  }
+  b.disabled = false;
+});
+
+$("rescan2").addEventListener("click", () => $("rescan").click());
+
 // ---- games ---------------------------------------------------------------
 
 $("search").addEventListener("input", render);
@@ -452,7 +559,7 @@ refresh();
 pollLogs();
 setInterval(refresh, 3000);
 setInterval(pollLogs, 2000);
-showTab(location.hash === "#logs" ? "logs" : "games");
+showTab(["#logs", "#settings"].includes(location.hash) ? location.hash.slice(1) : "games");
 </script>
 </body>
 </html>

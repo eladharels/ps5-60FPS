@@ -51,6 +51,25 @@ fps60_handle(const http_req_t *req, http_resp_t *resp) {
     return;
   }
 
+  if(!strcmp(req->path, "/api/tile")) {
+    char on[4];
+    if(!is_post) {
+      goto not_allowed;
+    }
+    if(http_query_get(req->query, "on", on, sizeof(on))) {
+      resp->status = 400;
+      sb_puts(&resp->body, "{\"error\":\"missing on\"}");
+      return;
+    }
+    if(app_tile_set(on[0] == '1', FPS60_PORT)) {
+      resp->status = 500;
+      sb_puts(&resp->body, "{\"error\":\"see the Logs tab\"}");
+      return;
+    }
+    app_state_json(&resp->body);
+    return;
+  }
+
   if(!strcmp(req->path, "/api/quit")) {
     if(!is_post) {
       goto not_allowed;

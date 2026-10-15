@@ -18,7 +18,6 @@
 #include "routes.h"
 
 
-#define FPS60_PORT     8060
 #ifndef FPS60_DIR
 #define FPS60_DIR      "/data/fps60"
 #endif
@@ -151,6 +150,8 @@ main(void) {
   }
   free(db_text);
 
+  app_tile_startup(FPS60_PORT);
+
   if(pthread_create(&thread, NULL, watcher, NULL)) {
     LOGE("could not start the watcher thread");
     plat_notify("fps60: could not start watcher");
@@ -158,9 +159,11 @@ main(void) {
   }
 
   lan_address(ip, sizeof(ip));
+  LOGI("web page at http://%s:%d", ip, FPS60_PORT);
+  snprintf(msg, sizeof(msg), "http://%s:%d/", ip, FPS60_PORT);
+  app_set_lan_url(msg);
   snprintf(msg, sizeof(msg), "fps60 %s: http://%s:%d",
            replaced ? "restarted" : "running", ip, FPS60_PORT);
-  LOGI("web page at http://%s:%d", ip, FPS60_PORT);
   plat_notify(msg);
 
   http_serve(srv, fps60_handle, &fps60_stop);

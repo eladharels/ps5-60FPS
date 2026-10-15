@@ -47,6 +47,12 @@ the Logs tab, or kill `fps60.elf` in Payload Manager's process list. The console
 address of the page, `http://<ps5-ip>:8060`. Open it on a phone or computer on
 the same network.
 
+- **Home screen tile:** fps60 adds an **fps60** tile (with a 60 FPS icon) to
+  the Media section of the home screen. It opens the page in the console's
+  browser at `http://127.0.0.1:8060/`, so you don't need a phone. The tile
+  only works while fps60 is running. Remove or reinstall it on the Settings
+  tab; once removed, fps60 doesn't add it back. To have fps60 running after
+  every jailbreak, add `fps60.elf` to Payload Manager's autoload list.
 - The page lists your installed games. Games with a 60 FPS patch for the
   installed version come first, with a switch per patch.
 - Switch a patch on and fps60 applies it every time that game starts. Your

@@ -30,5 +30,15 @@ void plat_diagnose(void);
 // Names this process, as shown by process lists such as Payload Manager's.
 void plat_set_process_name(const char *name);
 
+// Title ID of the fps60 home screen tile. Its deep link opens the web page
+// in the console's browser.
+#define FPS60_TILE_TID "FPSU00060"
+
+// Installs the tile, or updates its files when they changed. Returns 0 when
+// the tile is installed and current.
+int plat_tile_install(int port);
+int plat_tile_remove(void);
+int plat_tile_installed(void);
+
 // Shows a toast on the console (stdout on the host build).
 void plat_notify(const char *msg);

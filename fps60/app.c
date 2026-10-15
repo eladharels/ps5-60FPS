@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "app.h"
 #include "log.h"
@@ -49,6 +50,9 @@ static patchdb_t g_db;
 static titles_t g_titles;
 static const char *const *g_roots;
 static char g_settings[256];
+static char g_no_tile[256];   // exists when the user removed the tile
+static int g_tile_installed;
+static char g_lan_url[96];
 
 static enabled_t *g_enabled;
 static int g_nenabled;
@@ -192,6 +196,12 @@ app_init(const char *db_text, const char *settings_path,
     return -1;
   }
   snprintf(g_settings, sizeof(g_settings), "%s", settings_path);
+  snprintf(g_no_tile, sizeof(g_no_tile), "%s", settings_path);
+  if(strrchr(g_no_tile, '/')) {
+    snprintf(strrchr(g_no_tile, '/') + 1,
+             sizeof(g_no_tile) - (strrchr(g_no_tile, '/') + 1 - g_no_tile),
+             "no-tile");
+  }
   g_roots = title_roots;
   settings_load();
   for(int i=0; i<g_nenabled; i++) {
@@ -201,6 +211,50 @@ app_init(const char *db_text, const char *settings_path,
   LOGI("%d patches loaded, %d installed titles, %d patches enabled",
        g_db.npatches, g_titles.n, g_nenabled);
   return 0;
+}
+
+
+void
+app_tile_startup(int port) {
+  struct stat st;
+
+  pthread_mutex_lock(&g_lock);
+  if(!stat(g_no_tile, &st)) {
+    LOGI("tile: not installing; it was removed from the web page");
+  } else {
+    plat_tile_install(port);
+  }
+  g_tile_installed = plat_tile_installed();
+  pthread_mutex_unlock(&g_lock);
+}
+
+
+int
+app_tile_set(int on, int port) {
+  FILE *f;
+  int rc;
+
+  pthread_mutex_lock(&g_lock);
+  if(on) {
+    unlink(g_no_tile);
+    rc = plat_tile_install(port);
+  } else {
+    if((f=fopen(g_no_tile, "w"))) {
+      fclose(f);
+    }
+    rc = plat_tile_remove();
+  }
+  g_tile_installed = plat_tile_installed();
+  pthread_mutex_unlock(&g_lock);
+  return rc;
+}
+
+
+void
+app_set_lan_url(const char *url) {
+  pthread_mutex_lock(&g_lock);
+  snprintf(g_lan_url, sizeof(g_lan_url), "%s", url);
+  pthread_mutex_unlock(&g_lock);
 }
 
 
@@ -323,7 +377,12 @@ void
 app_state_json(strbuf_t *sb) {
   pthread_mutex_lock(&g_lock);
 
-  sb_printf(sb, "{\"dbPatches\":%d,\"games\":[", g_db.npatches);
+  sb_printf(sb, "{\"dbPatches\":%d,\"build\":\"%s %s\",\"tile\":%s,",
+            g_db.npatches, __DATE__, __TIME__,
+            g_tile_installed ? "true" : "false");
+  sb_puts(sb, "\"lanUrl\":");
+  sb_json_str(sb, g_lan_url);
+  sb_puts(sb, ",\"games\":[");
   for(int i=0; i<g_titles.n; i++) {
     if(i) {
       sb_puts(sb, ",");

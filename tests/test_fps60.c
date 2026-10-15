@@ -93,6 +93,27 @@ plat_write(pid_t pid, intptr_t addr, const void *buf, size_t len) {
 }
 
 static int fake_diagnosed;
+static int fake_tile;
+static int fake_tile_installs;
+
+int
+plat_tile_install(int port) {
+  CHECK(port == 8060);
+  fake_tile = 1;
+  fake_tile_installs++;
+  return 0;
+}
+
+int
+plat_tile_remove(void) {
+  fake_tile = 0;
+  return 0;
+}
+
+int
+plat_tile_installed(void) {
+  return fake_tile;
+}
 
 void
 plat_set_process_name(const char *name) {
@@ -551,6 +572,26 @@ test_logs(void) {
   request("POST", "/api/diagnose", &resp);
   CHECK(resp.status == 200 && fake_diagnosed == 1);
   sb_free(&resp.body);
+  // Tile: installed at startup, removal is remembered across restarts.
+  app_tile_startup(8060);
+  CHECK(fake_tile && fake_tile_installs == 1);
+  request("GET", "/api/state", &resp);
+  CHECK(strstr(resp.body.data, "\"tile\":true") != NULL);
+  sb_free(&resp.body);
+  request("POST", "/api/tile?on=0", &resp);
+  CHECK(resp.status == 200 && strstr(resp.body.data, "\"tile\":false"));
+  sb_free(&resp.body);
+  app_tile_startup(8060);
+  CHECK(!fake_tile && fake_tile_installs == 1);
+  request("POST", "/api/tile?on=1", &resp);
+  CHECK(resp.status == 200 && fake_tile && fake_tile_installs == 2);
+  sb_free(&resp.body);
+  app_tile_startup(8060);
+  CHECK(fake_tile_installs == 3);
+  request("POST", "/api/tile", &resp);
+  CHECK(resp.status == 400);
+  sb_free(&resp.body);
+
   request("GET", "/api/quit", &resp);
   CHECK(resp.status == 405 && !fps60_stop);
   sb_free(&resp.body);

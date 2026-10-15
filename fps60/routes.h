@@ -2,6 +2,8 @@
 
 #include "http.h"
 
+#define FPS60_PORT 8060
+
 // Generated at build time by tools/embed.py.
 extern const char fps60_ui_html[];
 extern const char fps60_patches_db[];

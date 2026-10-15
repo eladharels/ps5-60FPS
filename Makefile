@@ -40,13 +40,15 @@ $(BUILD)/patches.db: tools/build_patchdb.py | $(PATCH_REPO)
 	@mkdir -p $(BUILD)
 	python3 tools/build_patchdb.py $(PATCH_REPO) $@
 
-$(BUILD)/embedded.c: tools/embed.py fps60/ui.html $(BUILD)/patches.db
+# fps60/assets/icon0.png is rendered from icon.svg; see fps60/assets/README.md.
+$(BUILD)/embedded.c: tools/embed.py fps60/ui.html $(BUILD)/patches.db fps60/assets/icon0.png
 	python3 tools/embed.py $@ fps60_ui_html=fps60/ui.html \
-	  fps60_patches_db=$(BUILD)/patches.db
+	  fps60_patches_db=$(BUILD)/patches.db \
+	  fps60_icon_png:bin=fps60/assets/icon0.png
 
 fps60.elf: $(FPS60_SRCS) fps60/platform_ps5.c $(BUILD)/embedded.c $(FPS60_HDRS) | sdk
 	$(CC) $(CFLAGS) -o $@ $(FPS60_SRCS) fps60/platform_ps5.c \
-	  $(BUILD)/embedded.c -lSceNotification -lSceSystemService -lpthread
+	  $(BUILD)/embedded.c -lSceNotification -lSceSystemService -lSceAppInstUtil -lpthread
 
 # Host tests: no SDK or console needed. The patch database check runs
 # against the real converted patches.
