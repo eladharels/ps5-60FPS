@@ -46,7 +46,7 @@ $(BUILD)/embedded.c: tools/embed.py fps60/ui.html $(BUILD)/patches.db
 
 fps60.elf: $(FPS60_SRCS) fps60/platform_ps5.c $(BUILD)/embedded.c $(FPS60_HDRS) | sdk
 	$(CC) $(CFLAGS) -o $@ $(FPS60_SRCS) fps60/platform_ps5.c \
-	  $(BUILD)/embedded.c -lSceNotification -lpthread
+	  $(BUILD)/embedded.c -lSceNotification -lSceSystemService -lpthread
 
 # Host tests: no SDK or console needed. The patch database check runs
 # against the real converted patches.

@@ -150,6 +150,8 @@
              aria-label="Filter log lines">
       <label><input type="checkbox" id="follow" checked> Follow</label>
       <button id="copylogs" type="button">Copy</button>
+      <button id="diagnose" type="button"
+              title="Log every process and the modules of game processes">Diagnose</button>
       <a href="/fps60.log" download="fps60.log">Download</a>
     </div>
     <div class="log-status" id="logstatus"></div>
@@ -404,6 +406,18 @@ $("copylogs").addEventListener("click", async () => {
   const b = $("copylogs");
   b.textContent = ok ? "Copied" : "Copy failed";
   setTimeout(() => { b.textContent = "Copy"; }, 1500);
+});
+$("diagnose").addEventListener("click", async () => {
+  const b = $("diagnose");
+  b.disabled = true;
+  try {
+    await call("POST", "/api/diagnose");
+    await pollLogs();
+  } catch (e) {
+    logError = "diagnose failed: " + e.message;
+    renderLogs(true);
+  }
+  b.disabled = false;
 });
 $("loglevel").addEventListener("change", () => renderLogs(true));
 $("logsearch").addEventListener("input", () => renderLogs(false));

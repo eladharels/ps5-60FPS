@@ -3,6 +3,7 @@
 
 #include "app.h"
 #include "log.h"
+#include "platform.h"
 #include "routes.h"
 
 
@@ -44,6 +45,16 @@ fps60_handle(const http_req_t *req, http_resp_t *resp) {
     }
     resp->type = "text/plain; charset=utf-8";
     log_text(&resp->body);
+    return;
+  }
+
+  if(!strcmp(req->path, "/api/diagnose")) {
+    if(!is_post) {
+      goto not_allowed;
+    }
+    LOGI("diagnose requested from the web page");
+    plat_diagnose();
+    sb_puts(&resp->body, "{\"ok\":true}");
     return;
   }
 

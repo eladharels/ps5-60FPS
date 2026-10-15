@@ -92,6 +92,13 @@ plat_write(pid_t pid, intptr_t addr, const void *buf, size_t len) {
   return 0;
 }
 
+static int fake_diagnosed;
+
+void
+plat_diagnose(void) {
+  fake_diagnosed++;
+}
+
 void
 plat_notify(const char *msg) {
   (void)msg;
@@ -532,6 +539,12 @@ test_logs(void) {
   sb_free(&resp.body);
   request("POST", "/api/logs", &resp);
   CHECK(resp.status == 405);
+  sb_free(&resp.body);
+  request("GET", "/api/diagnose", &resp);
+  CHECK(resp.status == 405 && fake_diagnosed == 0);
+  sb_free(&resp.body);
+  request("POST", "/api/diagnose", &resp);
+  CHECK(resp.status == 200 && fake_diagnosed == 1);
   sb_free(&resp.body);
 }
 
