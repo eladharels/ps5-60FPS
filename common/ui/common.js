@@ -92,6 +92,7 @@ const App = (() => {
   const MAX_LINES = 5000;
   let logs = [];
   let logSince = 0;
+  let logPid = 0;
   let logGap = false;
   let logError = "";
   let unseenErrors = 0;
@@ -189,7 +190,15 @@ const App = (() => {
 
   async function pollLogs() {
     try {
-      const d = await call("GET", "/api/logs?since=" + logSince);
+      let d = await call("GET", "/api/logs?since=" + logSince);
+      if (logPid && d.pid !== logPid) {
+        // A newer copy replaced the one this page was reading: start over.
+        logs = [];
+        logSince = 0;
+        logGap = false;
+        d = await call("GET", "/api/logs?since=0");
+      }
+      logPid = d.pid;
       if (d.dropped && logSince) logGap = true;
       logSince = d.next;
       logError = "";

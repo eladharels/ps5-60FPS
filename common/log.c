@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "log.h"
 
@@ -116,8 +117,9 @@ log_json(strbuf_t *sb, unsigned long since) {
 
   pthread_mutex_lock(&g_lock);
   oldest = g_next > LOG_CAP ? g_next - LOG_CAP : 1;
-  sb_printf(sb, "{\"next\":%lu,\"dropped\":%s,\"entries\":[", g_next - 1,
-            since + 1 < oldest ? "true" : "false");
+  // The pid tells the page when a new copy replaced the one it was reading.
+  sb_printf(sb, "{\"pid\":%d,\"next\":%lu,\"dropped\":%s,\"entries\":[",
+            (int)getpid(), g_next - 1, since + 1 < oldest ? "true" : "false");
   for(unsigned long s=(since + 1 > oldest ? since + 1 : oldest); s<g_next; s++) {
     const entry_t *e = &g_ring[s % LOG_CAP];
     sb_printf(sb, "%s{\"seq\":%lu,\"time\":%lld,\"level\":\"%s\",\"msg\":",

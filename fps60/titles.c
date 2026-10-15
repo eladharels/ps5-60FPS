@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -169,9 +170,14 @@ json_read_str(const char *p, char *out, size_t outlen) {
     if(*p == '\\') {
       p++;
       if(*p == 'u') {
-        unsigned cp;
-        if(sscanf(p + 1, "%4x", &cp) != 1) {
-          return -1;
+        unsigned cp = 0;
+        // Exactly four hex digits; anything shorter would skip past the end.
+        for(int i=1; i<=4; i++) {
+          int c = (unsigned char)p[i];
+          if(!isxdigit(c)) {
+            return -1;
+          }
+          cp = cp << 4 | (isdigit(c) ? c - '0' : (c | 0x20) - 'a' + 10);
         }
         utf8_put(&o, end, cp);
         p += 5;

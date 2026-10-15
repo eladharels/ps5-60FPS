@@ -1,7 +1,14 @@
 // Host-side tests for NetDis: the socket model, its JSON, and the routes.
 // The console's socket collection is replaced by a fixed list.
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <time.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -161,6 +168,10 @@ request(const char *method, const char *target, http_resp_t *resp) {
   resp->type = "application/json";
   CHECK(http_parse_request(raw, &req) == 0);
   netdis_handle(&req, resp);
+  // What the HTTP layer does once the reply is sent.
+  if(resp->after) {
+    resp->after();
+  }
 }
 
 
@@ -242,11 +253,103 @@ test_routes(void) {
 }
 
 
+static int serve_srv;
+static int serve_done;
+
+static void *
+serve_thread(void *arg) {
+  (void)arg;
+  http_serve(serve_srv, netdis_handle, &service_stop);
+  serve_done = 1;
+  return NULL;
+}
+
+
+static long
+ms_since(const struct timespec *start) {
+  struct timespec now;
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  return (now.tv_sec - start->tv_sec) * 1000 +
+         (now.tv_nsec - start->tv_nsec) / 1000000;
+}
+
+
+static int
+connect_local(int port) {
+  struct sockaddr_in addr = {.sin_family = AF_INET, .sin_port = htons(port)};
+  int fd = socket(AF_INET, SOCK_STREAM, 0);
+
+  struct timeval tv = {2, 0};  // fail instead of hanging on a stuck server
+
+  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  if(fd >= 0) {
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+  }
+  if(fd >= 0 && connect(fd, (struct sockaddr*)&addr, sizeof(addr))) {
+    close(fd);
+    return -1;
+  }
+  return fd;
+}
+
+
+// The real server: an idle client must not hold up others, and a quit is
+// answered before the server stops.
+static void
+test_server(void) {
+  const int port = 18070;
+  struct timespec start;
+  pthread_t thread;
+  char buf[256];
+  int idle, fd, n;
+
+  CHECK((serve_srv=http_listen(port)) >= 0);
+  if(serve_srv < 0) {
+    return;
+  }
+  service_stop = 0;
+  pthread_create(&thread, NULL, serve_thread, NULL);
+
+  CHECK((idle=connect_local(port)) >= 0);  // connects, never sends
+  usleep(100 * 1000);
+
+  clock_gettime(CLOCK_MONOTONIC, &start);
+  CHECK((fd=connect_local(port)) >= 0);
+  if(fd >= 0) {
+    static const char req[] = "GET /api/service HTTP/1.0\r\n\r\n";
+    CHECK(write(fd, req, sizeof(req) - 1) == sizeof(req) - 1);
+    n = read(fd, buf, sizeof(buf) - 1);
+    buf[n > 0 ? n : 0] = 0;
+    CHECK(!strncmp(buf, "HTTP/1.0 200", 12));
+    CHECK(ms_since(&start) < 1000);
+    close(fd);
+  }
+
+  CHECK(http_post_local(port, "/api/quit") == 0);  // got its 200
+  clock_gettime(CLOCK_MONOTONIC, &start);
+  while(!serve_done && ms_since(&start) < 2000) {
+    usleep(20 * 1000);
+  }
+  CHECK(serve_done);
+  if(serve_done) {
+    pthread_join(thread, NULL);
+  } else {
+    pthread_detach(thread);  // report the failure instead of hanging
+  }
+  if(idle >= 0) {
+    close(idle);
+  }
+  service_stop = 0;
+}
+
+
 int
 main(void) {
+  signal(SIGPIPE, SIG_IGN);  // as service_start() does on the console
   test_model();
   test_list();
   test_routes();
+  test_server();
   if(failures) {
     printf("%d check(s) failed\n", failures);
     return 1;

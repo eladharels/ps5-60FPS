@@ -275,6 +275,13 @@ test_metadata(void) {
   CHECK(!strcmp(t.name, "Jeu \xc3\xa9 \"deux\""));
   CHECK(t.ps5);
   CHECK(paramjson_parse("{\"contentVersion\":\"01.000.000\"}", &t) == -1);
+
+  // A \u escape cut short at the end of the file is rejected, not overread.
+  {
+    char *json = strdup("{\"titleId\":\"\\u1\"");
+    CHECK(paramjson_parse(json, &t) == -1);
+    free(json);
+  }
 }
 
 
@@ -370,6 +377,10 @@ request(const char *method, const char *target, http_resp_t *resp) {
   resp->status = 200;
   CHECK(http_parse_request(raw, &req) == 0);
   fps60_handle(&req, resp);
+  // What the HTTP layer does once the reply is sent.
+  if(resp->after) {
+    resp->after();
+  }
 }
 
 
@@ -458,6 +469,17 @@ test_app(void) {
   app_tick();
   CHECK(fake_writes == 1); // applied once per process
 
+  // Turning the patch off and on while the game runs doesn't apply it again
+  // (a mask patch would no longer find its pattern).
+  request("POST", "/api/toggle?tid=CUSA00001&name=60%20FPS&on=0", &resp);
+  sb_free(&resp.body);
+  app_tick();
+  request("POST", "/api/toggle?tid=CUSA00001&name=60%20FPS&on=1", &resp);
+  sb_free(&resp.body);
+  app_tick();
+  app_tick();
+  CHECK(fake_writes == 1);
+
   request("GET", "/api/state", &resp);
   CHECK(strstr(resp.body.data, "\"running\":[{\"pid\":4242") != NULL);
   CHECK(strstr(resp.body.data, "\"ok\":true") != NULL);
@@ -516,7 +538,8 @@ test_logs(void) {
   // The app tests above already logged; find where the ring is now.
   sb_init(&sb);
   log_json(&sb, 0);
-  CHECK(sscanf(sb.data, "{\"next\":%lu", &next) == 1);
+  CHECK(strstr(sb.data, "{\"pid\":") == sb.data);
+  CHECK(sscanf(strstr(sb.data, "\"next\":"), "\"next\":%lu", &next) == 1);
   CHECK(strstr(sb.data, "\"dropped\":false") != NULL);
   CHECK(strstr(sb.data, "game started: CUSA00001") != NULL);
   CHECK(strstr(sb.data, "wrote 1 bytes at") != NULL);

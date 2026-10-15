@@ -119,7 +119,8 @@ let fresh = new Set();    // keys that appeared in the latest refresh
 const sort = { listen: ["lport", 1], conn: ["proc", 1], all: ["proc", 1] };
 
 const keyOf = (s) => [s.proto, s.laddr, s.lport, s.raddr, s.rport, s.pid, s.fd].join("|");
-const isListen = (s) => s.proto === "tcp" ? s.state === "LISTEN" : !s.raddr;
+// UDP has no listen state: a bound, unconnected socket receives from anyone.
+const isListen = (s) => s.proto === "tcp" ? s.state === "LISTEN" : !s.raddr && s.lport > 0;
 const isConn = (s) => !!s.raddr;
 const owner = (s) => s.pid < 0 ? s.proc : s.proc + (s.tid ? " · " + s.tid : "");
 const hostPort = (a, p) => (a.includes(":") ? "[" + a + "]" : a) + ":" + p;

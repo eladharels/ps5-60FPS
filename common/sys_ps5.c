@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include <ps5/kernel.h>
 
@@ -170,6 +171,9 @@ sys_tile_install(const sys_tile_t *tile) {
   }
   if((err=register_tile(tile->tid))) {
     LOGE("tile: install failed: 0x%08x", err);
+    // Without param.json the next start retries, and the page doesn't
+    // claim a tile that the home screen doesn't have.
+    unlink(param_path);
     sceAppInstUtilTerminate();
     return -1;
   }

@@ -42,8 +42,24 @@ on_stop_signal(int sig) {
 
 void
 service_exit(void) {
+  static pthread_mutex_t once = PTHREAD_MUTEX_INITIALIZER;
+
+  // The server and a worker thread can both get here; one exit is enough.
+  if(pthread_mutex_trylock(&once)) {
+    for(;;) {
+      pause();
+    }
+  }
   LOGI("%s stopped", g_info.name);
   exit(0);
+}
+
+
+// Set from the quit route once its reply is on the wire, so the caller (the
+// page, or a newer copy taking over) always gets an answer.
+static void
+request_stop(void) {
+  service_stop = 1;
 }
 
 
@@ -78,10 +94,12 @@ take_port(int *replaced) {
     return srv;
   }
   LOGI("port %d is in use; asking the running %s to stop", port, g_info.name);
-  if(http_post_local(port, "/api/quit")) {
-    LOGW("nothing on port %d answered as %s", port, g_info.name);
-  }
-  for(int i=0; i<50 && srv < 0; i++) {
+  // Ask again every 2 s for up to 15 s: the running copy may be busy, and
+  // it stops within a second of answering.
+  for(int i=0; i<150 && srv < 0; i++) {
+    if(i % 20 == 0 && http_post_local(port, "/api/quit") && !i) {
+      LOGW("nothing on port %d answered as %s yet", port, g_info.name);
+    }
     usleep(100 * 1000);
     srv = http_listen(port);
   }
@@ -293,7 +311,7 @@ service_handle(const http_req_t *req, http_resp_t *resp) {
       goto not_allowed;
     }
     LOGI("stop requested from the web page or a newer %s", g_info.name);
-    service_stop = 1;
+    resp->after = request_stop;
     sb_puts(&resp->body, "{\"ok\":true}");
     return 1;
   }

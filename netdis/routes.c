@@ -1,3 +1,4 @@
+#include <pthread.h>
 #include <string.h>
 #include <time.h>
 
@@ -8,6 +9,9 @@
 
 
 // Collecting walks every process, so answers within a second share one run.
+// Requests run on their own threads; the lock also keeps two collections
+// from running at once.
+static pthread_mutex_t g_cache_lock = PTHREAD_MUTEX_INITIALIZER;
 static socklist_t g_cache;
 static struct timespec g_cache_time;
 static int g_cached;
@@ -30,9 +34,11 @@ cache_fresh(void) {
 
 static int
 sockets_json(strbuf_t *sb) {
+  pthread_mutex_lock(&g_cache_lock);
   if(!cache_fresh()) {
     socklist_t fresh;
     if(net_collect(&fresh)) {
+      pthread_mutex_unlock(&g_cache_lock);
       return -1;
     }
     socklist_free(&g_cache);
@@ -41,6 +47,7 @@ sockets_json(strbuf_t *sb) {
     clock_gettime(CLOCK_MONOTONIC, &g_cache_time);
   }
   socklist_json(&g_cache, sb);
+  pthread_mutex_unlock(&g_cache_lock);
   return 0;
 }
 
@@ -80,7 +87,9 @@ netdis_handle(const http_req_t *req, http_resp_t *resp) {
       goto not_allowed;
     }
     LOGI("diagnose requested from the web page");
+    pthread_mutex_lock(&g_cache_lock);
     net_diagnose();
+    pthread_mutex_unlock(&g_cache_lock);
     sb_puts(&resp->body, "{\"ok\":true}");
     return;
   }

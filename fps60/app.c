@@ -361,6 +361,17 @@ app_state_json(strbuf_t *sb) {
 
 
 static tracked_t *
+find_tracked(pid_t pid, const char *tid) {
+  for(int i=0; i<g_nprocs; i++) {
+    if(g_procs[i].pid == pid && !strcmp(g_procs[i].tid, tid)) {
+      return &g_procs[i];
+    }
+  }
+  return NULL;
+}
+
+
+static tracked_t *
 track(pid_t pid, const char *tid) {
   tracked_t *t;
 
@@ -516,7 +527,12 @@ handle_patch(tracked_t *t, const char *name, const char *tname,
          p->appelf, (unsigned long)base, t->ticks * 100, name, p->nlines,
          p->nlines == 1 ? "" : "s", p->appver,
          p->author[0] ? p->author : "?");
-    if(patcher_apply(t->pid, p, msg, sizeof(msg))) {
+    // Scanning can read hundreds of MB; don't hold up the web page. Only
+    // this thread changes g_procs, and g_db never changes after init.
+    pthread_mutex_unlock(&g_lock);
+    int failed = patcher_apply(t->pid, p, msg, sizeof(msg));
+    pthread_mutex_lock(&g_lock);
+    if(failed) {
       log_push(t->tid, tname, name, version, 0, msg);
       mark_done(t, k, 0);
       snprintf(msg, sizeof(msg), "fps60: %s failed on %s", name, tname);
@@ -550,8 +566,15 @@ handle_patch(tracked_t *t, const char *name, const char *tname,
 static void
 handle_proc(tracked_t *t) {
   const title_t *title = titles_find(&g_titles, t->tid);
-  const char *version = title ? title->version : "";
-  const char *tname = title && title->name[0] ? title->name : t->tid;
+  char version[sizeof(title->version)];
+  char tname[sizeof(title->name)];
+  char name[128];
+
+  // Copies: handle_patch() drops the lock, and a rescan or toggle from the
+  // web page may replace g_titles and g_enabled meanwhile.
+  snprintf(version, sizeof(version), "%s", title ? title->version : "");
+  snprintf(tname, sizeof(tname), "%s",
+           title && title->name[0] ? title->name : t->tid);
 
   if(!t->ticks) {
     LOGI("game started: %s \"%s\" pid %d, installed version %s", t->tid,
@@ -564,7 +587,8 @@ handle_proc(tracked_t *t) {
 
   for(int i=0; i<g_nenabled; i++) {
     if(!strcmp(g_enabled[i].tid, t->tid)) {
-      handle_patch(t, g_enabled[i].name, tname, version);
+      snprintf(name, sizeof(name), "%s", g_enabled[i].name);
+      handle_patch(t, name, tname, version);
     }
   }
   t->ticks++;
@@ -596,13 +620,13 @@ app_tick(void) {
     g_procs[i].seen = 0;
   }
   for(int i=0; i<n; i++) {
-    tracked_t *t;
-    // System apps also carry title IDs (NPXS...); only follow titles that
-    // have a patch enabled.
-    if(!has_enabled(procs[i].title_id)) {
-      continue;
-    }
-    if(!(t=track(procs[i].pid, procs[i].title_id))) {
+    tracked_t *t = find_tracked(procs[i].pid, procs[i].title_id);
+    // System apps also carry title IDs (NPXS...); only start following
+    // titles that have a patch enabled. Once followed, a process stays
+    // tracked until it exits, so turning its patches off and on again
+    // doesn't apply them a second time.
+    if(!t && (!has_enabled(procs[i].title_id) ||
+              !(t=track(procs[i].pid, procs[i].title_id)))) {
       continue;
     }
     t->seen = 1;
