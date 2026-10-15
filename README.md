@@ -41,7 +41,9 @@ Keep the loader port on the LAN only: anything that can reach 9021 can run code 
 
 ## fps60
 
-Send `fps60.elf` once per boot. The console shows a notification with the
+Send `fps60.elf` once per boot. To update it, just send the new one: it asks
+the running copy to stop and takes over. To stop it, use **Stop fps60** on
+the Logs tab, or kill `fps60.elf` in Payload Manager's process list. The console shows a notification with the
 address of the page, `http://<ps5-ip>:8060`. Open it on a phone or computer on
 the same network.
 

@@ -153,6 +153,7 @@
       <button id="diagnose" type="button"
               title="Log every process and the modules of game processes">Diagnose</button>
       <a href="/fps60.log" download="fps60.log">Download</a>
+      <button id="stopfps60" type="button">Stop fps60</button>
     </div>
     <div class="log-status" id="logstatus"></div>
     <div id="logbox" role="log" aria-live="off"></div>
@@ -418,6 +419,16 @@ $("diagnose").addEventListener("click", async () => {
     renderLogs(true);
   }
   b.disabled = false;
+});
+$("stopfps60").addEventListener("click", async () => {
+  if (!confirm("Stop fps60 on the console? Patches already applied stay in " +
+               "running games. Send fps60.elf again to start it.")) return;
+  try {
+    await call("POST", "/api/quit");
+    showError("fps60 is stopped. Send fps60.elf again to start it.");
+  } catch (e) {
+    showError("Couldn't stop fps60: " + e.message);
+  }
 });
 $("loglevel").addEventListener("change", () => renderLogs(true));
 $("logsearch").addEventListener("input", () => renderLogs(false));

@@ -27,5 +27,8 @@ int plat_write(pid_t pid, intptr_t addr, const void *buf, size_t len);
 // processes, to diagnose game detection.
 void plat_diagnose(void);
 
+// Names this process, as shown by process lists such as Payload Manager's.
+void plat_set_process_name(const char *name);
+
 // Shows a toast on the console (stdout on the host build).
 void plat_notify(const char *msg);

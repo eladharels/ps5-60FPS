@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <signal.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -163,14 +164,13 @@ handle_conn(int fd, http_handler_t handler) {
 
 
 int
-http_serve(int port, http_handler_t handler) {
+http_listen(int port) {
   struct sockaddr_in addr;
-  struct timeval tv = {5, 0};
   int one = 1;
   int srv;
+  int err;
 
   if((srv=socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-    LOGE("socket: %s", strerror(errno));
     return -1;
   }
   setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
@@ -180,15 +180,23 @@ http_serve(int port, http_handler_t handler) {
   addr.sin_port = htons(port);
   addr.sin_addr.s_addr = htonl(INADDR_ANY);
   if(bind(srv, (struct sockaddr*)&addr, sizeof(addr)) || listen(srv, 8)) {
-    LOGE("bind port %d: %s", port, strerror(errno));
+    err = errno;
     close(srv);
+    errno = err;
     return -1;
   }
+  return srv;
+}
 
-  for(;;) {
+
+void
+http_serve(int srv, http_handler_t handler, volatile sig_atomic_t *stop) {
+  struct timeval tv = {5, 0};
+
+  while(!*stop) {
     int fd = accept(srv, NULL, NULL);
     if(fd < 0) {
-      continue;
+      continue; // EINTR from a stop signal lands here
     }
     // A stalled client must not block the UI for everyone else.
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
@@ -196,4 +204,40 @@ http_serve(int port, http_handler_t handler) {
     handle_conn(fd, handler);
     close(fd);
   }
+  close(srv);
+}
+
+
+int
+http_post_local(int port, const char *path) {
+  struct sockaddr_in addr;
+  struct timeval tv = {2, 0};
+  char req[256];
+  char buf[64];
+  int fd;
+  int n;
+
+  if((fd=socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+    return -1;
+  }
+  setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+  setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+  memset(&addr, 0, sizeof(addr));
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(port);
+  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  if(connect(fd, (struct sockaddr*)&addr, sizeof(addr))) {
+    close(fd);
+    return -1;
+  }
+  n = snprintf(req, sizeof(req), "POST %s HTTP/1.0\r\nHost: localhost\r\n\r\n",
+               path);
+  send_all(fd, req, n);
+  n = read(fd, buf, sizeof(buf) - 1);
+  close(fd);
+  if(n <= 0) {
+    return -1;
+  }
+  buf[n] = 0;
+  return strncmp(buf, "HTTP/1.0 200", 12) ? -1 : 0;
 }

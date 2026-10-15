@@ -7,6 +7,9 @@
 #include "routes.h"
 
 
+volatile sig_atomic_t fps60_stop;
+
+
 void
 fps60_handle(const http_req_t *req, http_resp_t *resp) {
   int is_get = !strcmp(req->method, "GET");
@@ -45,6 +48,16 @@ fps60_handle(const http_req_t *req, http_resp_t *resp) {
     }
     resp->type = "text/plain; charset=utf-8";
     log_text(&resp->body);
+    return;
+  }
+
+  if(!strcmp(req->path, "/api/quit")) {
+    if(!is_post) {
+      goto not_allowed;
+    }
+    LOGI("stop requested from the web page or a newer fps60");
+    fps60_stop = 1;
+    sb_puts(&resp->body, "{\"ok\":true}");
     return;
   }
 

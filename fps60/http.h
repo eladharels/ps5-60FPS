@@ -1,5 +1,7 @@
 #pragma once
 
+#include <signal.h>
+
 #include "util.h"
 
 typedef struct http_req {
@@ -23,5 +25,12 @@ int http_parse_request(const char *raw, http_req_t *req);
 // Returns 0 when the parameter is present.
 int http_query_get(const char *query, const char *key, char *out, size_t outlen);
 
-// Serves forever on `port`. Returns -1 if the port cannot be bound.
-int http_serve(int port, http_handler_t handler);
+// Binds and listens on `port`. Returns the socket, or -1 with errno set.
+int http_listen(int port);
+
+// Serves requests on `srv` until `*stop` is set, then closes it.
+void http_serve(int srv, http_handler_t handler, volatile sig_atomic_t *stop);
+
+// Sends `POST path` to this console's own server on `port`. Returns 0 on a
+// 200 response.
+int http_post_local(int port, const char *path);

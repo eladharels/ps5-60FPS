@@ -27,6 +27,7 @@ int sceKernelGetAppInfo(pid_t pid, app_info_t *info);
 int sceNotificationSend(int userId, bool isLogged, const char *payload);
 int sceSystemServiceGetAppIdOfRunningBigApp(void);
 int sceSystemServiceGetAppTitleId(int app_id, char *title_id);
+int sceKernelSetProcessName(const char *name);
 
 #define SCE_NOTIFICATION_LOCAL_USER_ID_SYSTEM 0xFE
 
@@ -325,6 +326,14 @@ plat_write(pid_t pid, intptr_t addr, const void *buf, size_t len) {
   // Tries the kernel debugger interface first, which handles read-only code
   // pages, and falls back to writing the backing physical memory.
   return kernel_proc_copyin(pid, buf, addr, len);
+}
+
+
+void
+plat_set_process_name(const char *name) {
+  if(sceKernelSetProcessName(name)) {
+    LOGW("could not rename the process to %s", name);
+  }
 }
 
 

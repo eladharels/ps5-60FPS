@@ -95,6 +95,11 @@ plat_write(pid_t pid, intptr_t addr, const void *buf, size_t len) {
 static int fake_diagnosed;
 
 void
+plat_set_process_name(const char *name) {
+  (void)name;
+}
+
+void
 plat_diagnose(void) {
   fake_diagnosed++;
 }
@@ -546,6 +551,13 @@ test_logs(void) {
   request("POST", "/api/diagnose", &resp);
   CHECK(resp.status == 200 && fake_diagnosed == 1);
   sb_free(&resp.body);
+  request("GET", "/api/quit", &resp);
+  CHECK(resp.status == 405 && !fps60_stop);
+  sb_free(&resp.body);
+  request("POST", "/api/quit", &resp);
+  CHECK(resp.status == 200 && fps60_stop);
+  sb_free(&resp.body);
+  fps60_stop = 0;
 }
 
 
