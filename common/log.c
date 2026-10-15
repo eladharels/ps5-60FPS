@@ -27,7 +27,17 @@ static unsigned long g_next = 1;
 static FILE *g_file;
 static long g_file_size;
 
+static char g_name[32] = "payload";
+
 static const char *const LEVELS[] = {"debug", "info", "warn", "error"};
+
+
+void
+log_set_name(const char *name) {
+  pthread_mutex_lock(&g_lock);
+  snprintf(g_name, sizeof(g_name), "%s", name);
+  pthread_mutex_unlock(&g_lock);
+}
 
 
 void
@@ -83,7 +93,7 @@ log_msg(int level, const char *fmt, ...) {
   }
 
   format_line(line, sizeof(line), e);
-  printf("[fps60] %s\n", line);
+  printf("[%s] %s\n", g_name, line);
   fflush(stdout);
   if(g_file && g_file_size < LOG_FILE_MAX) {
     int n = fprintf(g_file, "%s\n", line);

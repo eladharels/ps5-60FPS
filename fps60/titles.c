@@ -4,7 +4,6 @@
 #include <string.h>
 
 #include "log.h"
-#include "platform.h"
 #include "titles.h"
 #include "util.h"
 
@@ -20,6 +19,21 @@ const char *const TITLE_ROOTS[] = {
   "/user/patch",
   NULL
 };
+
+// Home screen tiles of this repo's payloads; not games.
+static const char *const OWN_TILES[] = {"FPSU00060", "NETD00001", NULL};
+
+
+static int
+is_own_tile(const char *tid) {
+  for(int i=0; OWN_TILES[i]; i++) {
+    if(!strcmp(tid, OWN_TILES[i])) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
 
 static const char *const META_FILES[] = {
   "param.json",
@@ -288,7 +302,7 @@ titles_scan(titles_t *t, const char *const *roots) {
     }
     while((e=readdir(dir))) {
       int rc = -1;
-      if(!is_title_id(e->d_name) || !strcmp(e->d_name, FPS60_TILE_TID)) {
+      if(!is_title_id(e->d_name) || is_own_tile(e->d_name)) {
         continue;
       }
       folders++;
