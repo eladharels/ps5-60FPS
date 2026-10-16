@@ -15,7 +15,10 @@ BUILD := build
 PATCH_REPO_URL ?= https://github.com/illusion0001/PS4-PS5-Game-Patch
 PATCH_REPO     ?= $(BUILD)/patch-repo
 
-CFLAGS := -Wall -Werror -g -Icommon
+# Release version; releases are tagged v$(VERSION). Built into the ELF.
+VERSION := $(shell cat VERSION)
+
+CFLAGS := -Wall -Werror -g -Icommon -DAPP_VERSION=\"$(VERSION)\"
 
 # Shared by every payload: web server, logs, service lifecycle, page assets.
 COMMON_SRCS := common/http.c common/log.c common/util.c common/service.c
@@ -51,7 +54,7 @@ $(BUILD)/fps60_embedded.c: tools/embed.py fps60/ui.html $(BUILD)/patches.db \
 	  fps60_icon_png:bin=fps60/assets/icon0.png \
 	  common_ui_css=common/ui/common.css common_ui_js=common/ui/common.js
 
-fps60.elf: $(FPS60_SRCS) fps60/platform_ps5.c $(COMMON_SRCS) $(COMMON_PS5) \
+fps60.elf: VERSION $(FPS60_SRCS) fps60/platform_ps5.c $(COMMON_SRCS) $(COMMON_PS5) \
            $(BUILD)/fps60_embedded.c $(FPS60_HDRS) | sdk
 	$(CC) $(CFLAGS) -o $@ $(FPS60_SRCS) fps60/platform_ps5.c $(COMMON_SRCS) \
 	  $(COMMON_PS5) $(BUILD)/fps60_embedded.c $(COMMON_LIBS) -lSceSystemService
@@ -66,6 +69,13 @@ check: $(BUILD)/test_fps60 $(BUILD)/patches.db
 	python3 tests/test_build_patchdb.py
 	$(BUILD)/test_fps60 $(BUILD)/patches.db
 
+# Release package: the ELF with the README and changelog.
+DIST := $(BUILD)/fps60-v$(VERSION).zip
+dist: fps60.elf
+	@mkdir -p $(BUILD)
+	rm -f $(DIST)
+	zip -j $(DIST) fps60.elf README.md CHANGELOG.md
+
 clean:
 	rm -f *.elf $(BUILD)/*_embedded.c $(BUILD)/patches.db $(BUILD)/test_*
 
@@ -73,4 +83,4 @@ clean:
 test: fps60.elf | sdk
 	$(PS5_DEPLOY) -h $(PS5_HOST) -p $(PS5_PORT) fps60.elf
 
-.PHONY: all sdk check clean test
+.PHONY: all sdk check clean test dist

@@ -39,6 +39,7 @@
              aria-label="Search games">
       <select id="filter" aria-label="Filter">
         <option value="patched">Games with a 60 FPS patch</option>
+        <option value="tested">Tested on PS5</option>
         <option value="all">All installed games</option>
       </select>
       <button id="rescan" type="button">Rescan</button>
@@ -65,6 +66,18 @@
 const { $, el, chip, call, showError } = App;
 let state = null;
 let busy = false;
+
+// Patches confirmed working on a real PS5 (see "Tested games" in the README).
+// Each entry covers every regional title ID of the game.
+const TESTED = [
+  { game: "Gravity Rush 2", patch: "60 FPS", version: "01.11",
+    tids: ["CUSA00547", "CUSA03694", "CUSA04934", "CUSA04943"] },
+  { game: "The Order: 1886", patch: "60 FPS Unlock", version: "01.02",
+    tids: ["CUSA00035", "CUSA00070", "CUSA00076", "CUSA00100", "CUSA00670", "CUSA00785"] },
+];
+const testedFor = (tid, name) =>
+  TESTED.find((t) => t.patch === name && t.tids.includes(tid));
+const gameTested = (g) => g.patches.some((p) => testedFor(g.tid, p.name));
 
 async function refresh() {
   if (busy) return;
@@ -114,6 +127,12 @@ function patchRow(game, patch) {
   } else {
     name.append(chip("bad", "Not supported by fps60"));
   }
+  const tested = testedFor(game.tid, patch.name);
+  if (tested) {
+    const c = chip("info", "Tested on PS5");
+    c.title = "Confirmed working on a PS5 with game version " + tested.version;
+    name.append(c);
+  }
   if (patch.enabled && running) name.append(chip("ok", "Game running"));
   info.append(name);
 
@@ -138,12 +157,13 @@ function render() {
   if (!state) return;
   App.renderSettings();
   const q = $("search").value.trim().toLowerCase();
-  const onlyPatched = $("filter").value === "patched";
+  const filter = $("filter").value;
   const games = state.games
-    .filter((g) => !onlyPatched || g.patches.length)
+    .filter((g) => filter === "all" || (filter === "tested" ? gameTested(g) : g.patches.length))
     .filter((g) => !q || (g.name + " " + g.tid).toLowerCase().includes(q))
     .sort((a, b) =>
       (b.patches.some((p) => p.available) - a.patches.some((p) => p.available)) ||
+      (gameTested(b) - gameTested(a)) ||
       (a.name || a.tid).localeCompare(b.name || b.tid));
 
   const withPatch = state.games.filter((g) => g.patches.some((p) => p.available)).length;
