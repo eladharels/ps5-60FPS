@@ -9,6 +9,10 @@
 #include "sys.h"
 
 
+#ifndef APP_VERSION
+#define APP_VERSION "dev"  // set from VERSION by the Makefile
+#endif
+
 #ifndef FPS60_DIR
 #define FPS60_DIR      "/data/fps60"
 #endif
@@ -34,6 +38,7 @@ int
 main(void) {
   service_info_t info = {
     .name = "fps60",
+    .version = APP_VERSION,
     .proc_name = "fps60.elf",
     .data_dir = FPS60_DIR,
     .port = 8060,

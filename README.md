@@ -4,6 +4,7 @@
 
 <p align="center">
   Unlock 60 FPS in PS4 and PS5 games on a jailbroken PS5, with one switch per game.<br>
+  <a href="https://github.com/eladharels/ps5-60fps/releases/latest"><img src="https://img.shields.io/github/v/release/eladharels/ps5-60fps?label=release" alt="latest release"></a>
   <a href="https://github.com/eladharels/ps5-60fps/actions/workflows/build.yml"><img src="https://github.com/eladharels/ps5-60fps/actions/workflows/build.yml/badge.svg" alt="build"></a>
 </p>
 
@@ -22,11 +23,13 @@ patch into the game's memory as it loads. Your game files are never changed.
 
 - [What you need](#what-you-need)
 - [Quick start](#quick-start)
+- [Tested games](#tested-games)
 - [Using fps60](#using-fps60)
 - [How it works](#how-it-works)
 - [Files on the console](#files-on-the-console)
 - [Limits and safety](#limits-and-safety)
 - [Troubleshooting](#troubleshooting)
+- [Versions and releases](#versions-and-releases)
 - [Building from source](#building-from-source)
 - [Credits](#credits)
 
@@ -41,15 +44,15 @@ patch into the game's memory as it loads. Your game files are never changed.
 
 ## Quick start
 
-1. **Get `fps60.elf`.** Download the `fps60` artifact from the latest
-   [build](https://github.com/eladharels/ps5-60fps/actions/workflows/build.yml)
-   (you need to be signed in to GitHub), or [build it](#building-from-source).
+1. **Download `fps60.elf`** from the
+   [latest release](https://github.com/eladharels/ps5-60fps/releases/latest)
+   (or the zip, which also has this README and the changelog).
 2. **Send it to the console** after jailbreaking:
    ```bash
    socat -t 99999999 - TCP:<ps5-ip>:9021 < fps60.elf
    ```
    or pick it in Payload Manager. The console shows
-   *"fps60 running: http://&lt;ps5-ip&gt;:8060"*.
+   *"fps60 v1.0.0 running: http://&lt;ps5-ip&gt;:8060"*.
 3. **Open fps60.** On the home screen, go to **Media** and open the **fps60**
    tile. It opens the page in the console's browser. On a phone or computer
    on the same network, open `http://<ps5-ip>:8060` instead.
@@ -59,6 +62,21 @@ patch into the game's memory as it loads. Your game files are never changed.
 fps60 keeps running until the console restarts or goes into rest mode. Your
 switches are saved, so after a reboot you only need to send `fps60.elf` again.
 To skip even that, add `fps60.elf` to Payload Manager's autoload list.
+
+## Tested games
+
+These patches have been confirmed working on a real PS5. They show a
+**Tested on PS5** label on the Games tab, and the **Tested on PS5** filter
+lists only them.
+
+| Game | Patch | Game version | Notes |
+| --- | --- | --- | --- |
+| Gravity Rush 2 | 60 FPS | 01.11 | |
+| The Order: 1886 | 60 FPS Unlock | 01.02 | The patch author notes softlocks in chapters 6 and 9 during quick-time events: switch the patch off to get past them. |
+
+The other patches come from the community and should work the same way, but
+haven't been tried with fps60 yet. If you test one, open an issue with the
+game, its version and the result, so it can be added here.
 
 ## Using fps60
 
@@ -72,6 +90,8 @@ switch and a label:
 
 - **Matches your version:** the patch is made for the version you have
   installed. You can switch it on.
+- **Tested on PS5:** confirmed working on a real console (see
+  [Tested games](#tested-games)).
 - **Needs version X:** the patch exists, but for another game version.
   Update (or downgrade) the game to use it.
 - **Not supported by fps60:** the patch uses a feature fps60 doesn't
@@ -83,7 +103,8 @@ patches have side effects, such as a cutscene you need to switch the patch
 off for.
 
 - **Search** filters by name or title ID.
-- **All installed games** shows games without a patch too.
+- **Tested on PS5** shows only tested patches; **All installed games** shows
+  games without a patch too.
 - **Rescan** reads the installed games again (after installing or updating
   a game).
 - **Activity** lists what was applied, and why a patch failed.
@@ -222,16 +243,46 @@ To update the patch list without rebuilding fps60, copy a newer
 | *"port 8060 is busy"* | Another program uses port 8060, or the running fps60 didn't stop. Restart the console. |
 | The tile opens an error page | fps60 isn't running. Send `fps60.elf` again (or add it to Payload Manager's autoload). |
 
+## Versions and releases
+
+Every version is published on the
+[Releases page](https://github.com/eladharels/ps5-60fps/releases) with:
+
+- `fps60.elf`, ready to send to the console
+- `fps60-vX.Y.Z.zip`, which holds the same ELF plus this README and the
+  changelog
+
+What changed in each version is in [CHANGELOG.md](CHANGELOG.md) and in each
+release's notes. The running version is shown in the start notification and
+under Settings > About.
+
+Version numbers follow [semantic versioning](https://semver.org):
+
+- **X:** goes up for changes that break your setup.
+- **Y:** goes up for new features.
+- **Z:** goes up for fixes.
+
+Publishing a new version (for maintainers):
+
+1. Put the new number in `VERSION`, and add a `## [X.Y.Z] - date` section at
+   the top of `CHANGELOG.md`.
+2. Merge the change into `main`.
+3. Tag the merge commit and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+4. The *release* workflow checks the tag matches `VERSION`, runs the tests,
+   builds with the pinned SDK (v0.44), and publishes the release with the
+   changelog section as its notes.
+
 ## Building from source
 
 ```bash
-sudo apt-get install make clang-18 lld-18 llvm-18 wget unzip python3 git socat
-wget https://github.com/ps5-payload-dev/sdk/releases/latest/download/ps5-payload-sdk.zip
+sudo apt-get install make clang-18 lld-18 llvm-18 wget unzip zip python3 git socat
+wget https://github.com/ps5-payload-dev/sdk/releases/download/v0.44/ps5-payload-sdk.zip
 sudo unzip -d /opt ps5-payload-sdk.zip
 export PS5_PAYLOAD_SDK=/opt/ps5-payload-sdk LLVM_CONFIG=/usr/bin/llvm-config-18
 
 make            # fps60.elf
 make check      # host tests: no SDK or console needed
+make dist       # build/fps60-vX.Y.Z.zip
 make test PS5_HOST=<ps5-ip>   # send fps60.elf and stream its log
 ```
 
@@ -274,6 +325,7 @@ Actions > General > *Require approval for all external contributors*.
 | `fps60/` | Game scanning (`titles.c`), patch database (`patchdb.c`), patcher (`patcher.c`), watcher and state (`app.c`), console-specific code (`platform_ps5.c`), the page (`ui.html`) and the icon (`assets/`) |
 | `common/` | Shared payload framework: web server, log, startup/replace/stop (`service.c`), notifications and home screen tile (`sys_ps5.c`), Logs and Settings tabs (`ui/`) |
 | `tools/` | `build_patchdb.py` (patch converter) and `embed.py` (builds the page, patches and icon into the ELF) |
+| `.github/workflows/` | `build.yml` (tests and builds every push), `release.yml` (publishes a release for a version tag) |
 | `tests/` | Host tests |
 
 ## Credits
