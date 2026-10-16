@@ -8,8 +8,8 @@ on:
       payload:
         description: Payload to send to the console
         type: choice
-        options: [hello.elf, fps60.elf, NetDis.elf]
-        default: hello.elf
+        options: [fps60.elf]
+        default: fps60.elf
 
 jobs:
   build:
@@ -38,7 +38,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: payload
+          name: fps60
           path: |
             *.elf
             build/patches.db
@@ -58,11 +58,11 @@ jobs:
     env:
       PS5_HOST: ${{ vars.PS5_HOST }}
       PS5_PORT: ${{ vars.PS5_PORT || '9021' }}
-      PAYLOAD: ${{ inputs.payload || vars.PS5_PAYLOAD || 'hello.elf' }}
+      PAYLOAD: ${{ inputs.payload || 'fps60.elf' }}
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: payload
+          name: fps60
 
       - name: Check the console is reachable
         id: reach
