@@ -17,7 +17,7 @@ First public release.
 - Version number in the notification ("fps60 v1.0.0 running"), the log, and
   Settings > About.
 - Releases with `fps60.elf` and a zip, built and published by GitHub Actions
-  from the version tag.
+  when a new version reaches `main`.
 
 ### Changed
 - Built with a fixed PS5 payload SDK version (v0.44) instead of whatever is
